@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Settings - {{ project.name }} - SaralTrack{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+    <div class="flex items-center gap-3">
+        <a href="{{ url_for('projects.project_overview', key=project.key) }}" class="dark:text-gray-400 text-gray-500 hover:text-electric">{{ project.key }}</a>
+        <span class="dark:text-gray-600 text-gray-300">/</span>
+        <h1 class="text-xl font-bold">Settings</h1>
+    </div>
+
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-6 space-y-6">
+        <div>
+            <h3 class="font-semibold text-amber mb-2">Archive Project</h3>
+            <p class="text-sm dark:text-gray-400 text-gray-500 mb-3">Archiving hides the project from default views.</p>
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="archive">
+                <button type="submit" class="px-4 py-2 bg-amber/10 text-amber rounded-lg text-sm font-medium hover:bg-amber/20" onclick="return confirm('Archive this project?')">
+                    Archive Project
+                </button>
+            </form>
+        </div>
+
+        {% if current_user.role == 'admin' %}
+        <div class="border-t dark:border-navy-border border-gray-200 pt-6">
+            <h3 class="font-semibold text-rose mb-2">Delete Project</h3>
+            <p class="text-sm dark:text-gray-400 text-gray-500 mb-3">This will permanently delete the project and all its data. This action cannot be undone.</p>
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="delete">
+                <button type="submit" class="px-4 py-2 bg-rose/10 text-rose rounded-lg text-sm font-medium hover:bg-rose/20" onclick="return confirm('Are you sure? This cannot be undone.')">
+                    Delete Project
+                </button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

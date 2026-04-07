@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}New Ticket - {{ project.name }} - SaralTrack{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <div class="flex items-center gap-3 mb-6">
+        <a href="{{ url_for('projects.project_overview', key=project.key) }}" class="dark:text-gray-400 text-gray-500 hover:text-electric">{{ project.key }}</a>
+        <span class="dark:text-gray-600 text-gray-300">/</span>
+        <h1 class="text-xl font-bold">Create Ticket</h1>
+    </div>
+
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-6">
+        <form method="POST" class="space-y-5">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            
+            <div>
+                <label class="block text-sm font-medium mb-2">Title *</label>
+                <input type="text" name="title" required placeholder="Brief summary of the issue or task"
+                       class="w-full px-4 py-3 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 focus:outline-none focus:ring-2 focus:ring-electric text-sm">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-2">Description</label>
+                <textarea name="description" rows="6" placeholder="Detailed description (Markdown supported)"
+                          class="w-full px-4 py-3 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 focus:outline-none focus:ring-2 focus:ring-electric text-sm font-mono"></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Type</label>
+                    <select name="type" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                        {% for t in ['task', 'bug', 'story', 'epic', 'subtask', 'improvement'] %}
+                        <option value="{{ t }}">{{ t|capitalize }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Priority</label>
+                    <select name="priority" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                        {% for p in ['medium', 'high', 'critical', 'low'] %}
+                        <option value="{{ p }}">{{ p|capitalize }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Assignee</label>
+                    <select name="assigned_to" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                        <option value="">Unassigned</option>
+                        {% for m in members %}
+                        <option value="{{ m.id }}">{{ m.full_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Sprint</label>
+                    <select name="sprint_id" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                        <option value="">No Sprint</option>
+                        {% for s in sprints %}
+                        <option value="{{ s.id }}">{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Story Points</label>
+                    <input type="number" name="story_points" min="0" max="100" value="0"
+                           class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Estimated Hours</label>
+                    <input type="number" name="estimated_hours" min="0" step="0.5" value="0"
+                           class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-2">Soft Deadline</label>
+                    <input type="datetime-local" name="soft_deadline"
+                           class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                    <p class="text-xs dark:text-gray-500 text-gray-400 mt-1">Advisory target date</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Hard Deadline</label>
+                    <input type="datetime-local" name="hard_deadline"
+                           class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                    <p class="text-xs dark:text-gray-500 text-gray-400 mt-1">Non-negotiable deadline</p>
+                </div>
+            </div>
+
+            {% if epics %}
+            <div>
+                <label class="block text-sm font-medium mb-2">Parent Epic</label>
+                <select name="parent_ticket_id" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                    <option value="">None</option>
+                    {% for epic in epics %}
+                    <option value="{{ epic.id }}">{{ epic.ticket_key }}: {{ epic.title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            {% if labels %}
+            <div>
+                <label class="block text-sm font-medium mb-2">Labels</label>
+                <div class="flex flex-wrap gap-2">
+                    {% for label in labels %}
+                    <label class="flex items-center gap-2 px-3 py-1.5 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-200 cursor-pointer hover:border-electric/50">
+                        <input type="checkbox" name="labels" value="{{ label.id }}" class="rounded text-electric">
+                        <span class="w-3 h-3 rounded-full" style="background: {{ label.color }}"></span>
+                        <span class="text-sm">{{ label.name }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="flex gap-3 pt-2">
+                <button type="submit" class="px-6 py-3 bg-electric hover:bg-electric-dark text-white rounded-lg font-semibold transition-colors">
+                    Create Ticket
+                </button>
+                <a href="{{ url_for('projects.project_backlog', key=project.key) }}" class="px-6 py-3 dark:bg-navy-lighter bg-gray-100 rounded-lg font-medium transition-colors">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Manage Users - SaralTrack{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto">
+    <h1 class="text-2xl font-bold mb-6">Manage Users</h1>
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 overflow-hidden">
+        <table class="w-full">
+            <thead class="dark:bg-navy-lighter bg-gray-50 text-left text-sm">
+                <tr>
+                    <th class="px-4 py-3 font-medium">User</th>
+                    <th class="px-4 py-3 font-medium">Role</th>
+                    <th class="px-4 py-3 font-medium">Status</th>
+                    <th class="px-4 py-3 font-medium">Joined</th>
+                    <th class="px-4 py-3 font-medium">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y dark:divide-navy-border divide-gray-200">
+                {% for user in users %}
+                <tr class="dark:hover:bg-navy-lighter/50 hover:bg-gray-50">
+                    <td class="px-4 py-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-electric flex items-center justify-center text-white text-xs font-bold">{{ user.get_initials() }}</div>
+                            <div>
+                                <p class="font-medium text-sm">{{ user.full_name }}</p>
+                                <p class="text-xs dark:text-gray-400 text-gray-500">@{{ user.username }}</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-4 py-3">
+                        <form method="POST" action="{{ url_for('auth.change_user_role', user_id=user.id) }}" class="inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <select name="role" onchange="this.form.submit()" 
+                                    class="text-sm rounded dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 px-2 py-1">
+                                {% for r in ['admin', 'manager', 'developer', 'viewer'] %}
+                                <option value="{{ r }}" {% if user.role == r %}selected{% endif %}>{{ r|capitalize }}</option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="inline-flex px-2 py-1 rounded-full text-xs font-medium {% if user.is_active %}bg-emerald/10 text-emerald{% else %}bg-rose/10 text-rose{% endif %}">
+                            {{ 'Active' if user.is_active else 'Inactive' }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-sm dark:text-gray-400 text-gray-500">
+                        {{ user.created_at.strftime('%b %d, %Y') if user.created_at else 'N/A' }}
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if user.id != current_user.id %}
+                        <form method="POST" action="{{ url_for('auth.toggle_user_active', user_id=user.id) }}" class="inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="text-sm px-3 py-1 rounded {% if user.is_active %}bg-rose/10 text-rose hover:bg-rose/20{% else %}bg-emerald/10 text-emerald hover:bg-emerald/20{% endif %} transition-colors">
+                                {{ 'Deactivate' if user.is_active else 'Activate' }}
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

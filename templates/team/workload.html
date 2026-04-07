@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Workload - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold">Workload Matrix</h1>
+        <a href="{{ url_for('team.team_directory') }}" class="px-4 py-2 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm hover:text-electric transition-colors">Team Directory</a>
+    </div>
+
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 overflow-x-auto">
+        <table class="w-full">
+            <thead class="dark:bg-navy-lighter bg-gray-50 text-left text-sm">
+                <tr>
+                    <th class="px-4 py-3 font-medium sticky left-0 dark:bg-navy-lighter bg-gray-50">Team Member</th>
+                    {% for p in projects %}
+                    <th class="px-4 py-3 font-medium text-center">{{ p.key }}</th>
+                    {% endfor %}
+                    <th class="px-4 py-3 font-medium text-center">Total</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y dark:divide-navy-border divide-gray-200">
+                {% for row in matrix %}
+                <tr class="dark:hover:bg-navy-lighter/50 hover:bg-gray-50">
+                    <td class="px-4 py-3 sticky left-0 dark:bg-navy-light bg-white">
+                        <div class="flex items-center gap-2">
+                            <div class="w-6 h-6 rounded-full bg-electric flex items-center justify-center text-white text-xs font-bold">{{ row.user.get_initials() }}</div>
+                            <span class="text-sm font-medium">{{ row.user.full_name }}</span>
+                        </div>
+                    </td>
+                    {% for p in projects %}
+                    <td class="px-4 py-3 text-center">
+                        {% set count = row.projects[p.key] %}
+                        {% if count > 0 %}
+                        <span class="inline-flex w-8 h-8 rounded-lg items-center justify-center text-sm font-bold
+                            {% if count >= 8 %}bg-rose/10 text-rose
+                            {% elif count >= 5 %}bg-amber/10 text-amber
+                            {% elif count >= 3 %}bg-electric/10 text-electric
+                            {% else %}bg-emerald/10 text-emerald{% endif %}">{{ count }}</span>
+                        {% else %}
+                        <span class="text-xs dark:text-gray-600 text-gray-300">-</span>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                    <td class="px-4 py-3 text-center font-bold">{{ row.total }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

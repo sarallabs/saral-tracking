@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Team - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold">Team Directory</h1>
+        <a href="{{ url_for('team.workload') }}" class="px-4 py-2 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm hover:text-electric transition-colors">View Workload</a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for item in user_stats %}
+        <a href="{{ url_for('team.user_profile', user_id=item.user.id) }}"
+           class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5 dark:hover:border-electric/50 hover:border-electric/50 transition-all">
+            <div class="flex items-center gap-4 mb-4">
+                <div class="w-12 h-12 rounded-full bg-electric flex items-center justify-center text-white text-lg font-bold">
+                    {{ item.user.get_initials() }}
+                </div>
+                <div>
+                    <h3 class="font-semibold">{{ item.user.full_name }}</h3>
+                    <p class="text-sm dark:text-gray-400 text-gray-500">@{{ item.user.username }} &middot; {{ item.user.role|capitalize }}</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-center">
+                <div class="dark:bg-navy bg-gray-50 rounded-lg p-2">
+                    <p class="text-lg font-bold text-electric">{{ item.open_tickets }}</p>
+                    <p class="text-xs dark:text-gray-500 text-gray-400">Open</p>
+                </div>
+                <div class="dark:bg-navy bg-gray-50 rounded-lg p-2">
+                    <p class="text-lg font-bold text-emerald">{{ item.done_tickets }}</p>
+                    <p class="text-xs dark:text-gray-500 text-gray-400">Done</p>
+                </div>
+                <div class="dark:bg-navy bg-gray-50 rounded-lg p-2">
+                    <p class="text-lg font-bold">{{ item.total }}</p>
+                    <p class="text-xs dark:text-gray-500 text-gray-400">Total</p>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+{% block title %}{{ ticket.ticket_key }} - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-4">
+    <!-- Breadcrumb -->
+    <div class="flex items-center gap-2 text-sm">
+        <a href="{{ url_for('projects.project_overview', key=project.key) }}" class="dark:text-gray-400 text-gray-500 hover:text-electric">{{ project.key }}</a>
+        <span class="dark:text-gray-600 text-gray-300">/</span>
+        <span class="font-mono text-electric">{{ ticket.ticket_key }}</span>
+    </div>
+
+    {% if ticket.hard_deadline and ticket.deadline_urgency() == 'red' %}
+    <div class="bg-rose/10 border border-rose/30 rounded-lg px-4 py-3 flex items-center gap-3">
+        <svg class="w-5 h-5 text-rose flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <div>
+            <p class="font-semibold text-rose">Hard Deadline Breached!</p>
+            <p class="text-sm dark:text-gray-300 text-gray-600">The hard deadline was {{ ticket.hard_deadline.strftime('%b %d, %Y at %H:%M') }}. Immediate action required.</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-1 lg:grid-cols-10 gap-6">
+        <!-- Left Panel (70%) -->
+        <div class="lg:col-span-7 space-y-6">
+            <!-- Title -->
+            <div x-data="{ editing: false, title: '{{ ticket.title|e }}' }">
+                <h1 x-show="!editing" @click="editing = true" class="text-2xl font-bold cursor-pointer hover:text-electric transition-colors" x-text="title"></h1>
+                <div x-show="editing" x-cloak class="flex gap-2">
+                    <input type="text" x-model="title" class="flex-1 text-2xl font-bold px-3 py-1 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 focus:outline-none focus:ring-2 focus:ring-electric">
+                    <button @click="updateField('title', title); editing = false" class="px-3 py-1 bg-electric text-white rounded-lg text-sm">Save</button>
+                    <button @click="editing = false" class="px-3 py-1 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Description -->
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5" 
+                 x-data="{ editing: false, desc: {{ ticket.description|tojson }} }">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold text-sm">Description</h3>
+                    {% if current_user.can_edit_ticket(ticket) %}
+                    <button @click="editing = !editing" class="text-xs text-electric hover:underline" x-text="editing ? 'Cancel' : 'Edit'"></button>
+                    {% endif %}
+                </div>
+                <div x-show="!editing" class="prose prose-sm dark:prose-invert max-w-none">
+                    {% if desc_html %}{{ desc_html|safe }}{% else %}<p class="dark:text-gray-500 text-gray-400 italic">No description</p>{% endif %}
+                </div>
+                <div x-show="editing" x-cloak>
+                    <textarea x-model="desc" rows="8" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm font-mono mb-2"></textarea>
+                    <button @click="updateField('description', desc); editing = false" class="px-3 py-2 bg-electric text-white rounded-lg text-sm">Save</button>
+                </div>
+            </div>
+
+            <!-- Subtasks -->
+            {% if subtasks %}
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
+                <h3 class="font-semibold text-sm mb-3">Subtasks</h3>
+                <div class="space-y-2">
+                    {% for sub in subtasks %}
+                    <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=sub.ticket_key) }}"
+                       class="flex items-center justify-between px-3 py-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-50">
+                        <div class="flex items-center gap-2">
+                            <span class="{% if sub.status == 'done' %}line-through dark:text-gray-500 text-gray-400{% endif %}">
+                                <span class="font-mono text-xs dark:text-gray-400 text-gray-500">{{ sub.ticket_key }}</span>
+                                <span class="text-sm ml-2">{{ sub.title }}</span>
+                            </span>
+                        </div>
+                        <span class="text-xs px-2 py-0.5 rounded-full dark:bg-navy-lighter bg-gray-100">{{ sub.status|replace('_', ' ') }}</span>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Comments -->
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
+                <h3 class="font-semibold text-sm mb-4">Comments</h3>
+                <div class="space-y-4" id="comments-list">
+                    {% for item in comments %}
+                    <div class="flex gap-3">
+                        <div class="w-8 h-8 rounded-full bg-electric flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                            {{ item.comment.author.get_initials() }}
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="font-medium text-sm">{{ item.comment.author.full_name }}</span>
+                                <span class="text-xs dark:text-gray-500 text-gray-400">{{ item.comment.created_at.strftime('%b %d, %H:%M') if item.comment.created_at else '' }}</span>
+                                {% if item.comment.is_internal %}
+                                <span class="text-xs px-1.5 py-0.5 rounded bg-amber/10 text-amber">Internal</span>
+                                {% endif %}
+                            </div>
+                            <div class="prose prose-sm dark:prose-invert max-w-none">{{ item.html|safe }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Add Comment -->
+                <div class="mt-6 pt-4 border-t dark:border-navy-border border-gray-200" x-data="{ content: '', internal: false, submitting: false }">
+                    <textarea x-model="content" rows="3" placeholder="Add a comment... (use @username to mention)"
+                              class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-electric"></textarea>
+                    <div class="flex items-center justify-between">
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" x-model="internal" class="rounded text-electric">
+                            Internal note
+                        </label>
+                        <button @click="submitComment(content, internal); content = ''" 
+                                class="px-4 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors"
+                                :disabled="!content.trim()">
+                            Comment
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Activity -->
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
+                <h3 class="font-semibold text-sm mb-3">Activity</h3>
+                <div class="space-y-3">
+                    {% for log in activity %}
+                    <div class="flex items-center gap-3 text-sm">
+                        <div class="w-1.5 h-1.5 rounded-full bg-electric flex-shrink-0"></div>
+                        <span class="dark:text-gray-400 text-gray-500">
+                            <strong>{{ log.user.full_name if log.user else 'System' }}</strong>
+                            {{ log.action|replace('_', ' ') }}
+                            {% if log.old_value and log.new_value %}
+                            <span class="dark:text-gray-500 text-gray-400">{{ log.old_value }} → {{ log.new_value }}</span>
+                            {% elif log.new_value %}
+                            <span class="dark:text-gray-500 text-gray-400">{{ log.new_value[:60] }}</span>
+                            {% endif %}
+                        </span>
+                        <span class="text-xs dark:text-gray-600 text-gray-400 ml-auto">{{ log.created_at.strftime('%b %d, %H:%M') if log.created_at else '' }}</span>
+                    </div>
+                    {% endfor %}
+                    {% if not activity %}
+                    <p class="dark:text-gray-500 text-gray-400 text-sm">No activity yet</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel (30%) -->
+        <div class="lg:col-span-3 space-y-4">
+            <!-- Status -->
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4 space-y-4">
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Status</label>
+                    <select onchange="updateStatus(this.value)" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                        {% for s in ['backlog', 'todo', 'in_progress', 'in_review', 'testing', 'done', 'cancelled'] %}
+                        <option value="{{ s }}" {% if ticket.status == s %}selected{% endif %}>{{ s|replace('_', ' ')|capitalize }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Priority</label>
+                    <select onchange="updateField('priority', this.value)" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                        {% for p in ['critical', 'high', 'medium', 'low'] %}
+                        <option value="{{ p }}" {% if ticket.priority == p %}selected{% endif %}>{{ p|capitalize }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Type</label>
+                    <select onchange="updateField('type', this.value)" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                        {% for t in ['task', 'bug', 'story', 'epic', 'subtask', 'improvement'] %}
+                        <option value="{{ t }}" {% if ticket.type == t %}selected{% endif %}>{{ t|capitalize }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Assignee</label>
+                    <select onchange="assignTicket(this.value)" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                        <option value="">Unassigned</option>
+                        {% for m in members %}
+                        <option value="{{ m.id }}" {% if ticket.assigned_to == m.id %}selected{% endif %}>{{ m.full_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Reporter</label>
+                    <p class="text-sm">{{ ticket.creator.full_name if ticket.creator else 'Unknown' }}</p>
+                </div>
+            </div>
+
+            <!-- Deadlines -->
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4 space-y-4 {% if ticket.deadline_urgency() == 'red' %}border-rose deadline-red{% endif %}">
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Soft Deadline</label>
+                    <input type="datetime-local" value="{{ ticket.soft_deadline.strftime('%Y-%m-%dT%H:%M') if ticket.soft_deadline else '' }}"
+                           onchange="updateField('soft_deadline', this.value)"
+                           class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                    {% set urgency = ticket.deadline_urgency() %}
+                    {% if urgency in ('yellow', 'orange') %}
+                    <p class="text-xs mt-1 {% if urgency == 'yellow' %}text-amber{% else %}text-orange-500{% endif %}">
+                        {% if urgency == 'yellow' %}Approaching{% else %}Passed{% endif %}
+                    </p>
+                    {% endif %}
+                </div>
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Hard Deadline</label>
+                    <input type="datetime-local" value="{{ ticket.hard_deadline.strftime('%Y-%m-%dT%H:%M') if ticket.hard_deadline else '' }}"
+                           onchange="updateField('hard_deadline', this.value)"
+                           class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm"
+                           {% if current_user.role not in ('admin', 'manager') %}disabled{% endif %}>
+                    {% if urgency == 'red' %}
+                    <p class="text-xs mt-1 text-rose font-semibold">BREACHED</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Sprint & Points -->
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4 space-y-4">
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Sprint</label>
+                    <select onchange="updateField('sprint_id', this.value)" class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                        <option value="">No Sprint</option>
+                        {% for s in sprints %}
+                        <option value="{{ s.id }}" {% if ticket.sprint_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Story Points</label>
+                    <input type="number" value="{{ ticket.story_points }}" min="0" max="100"
+                           onchange="updateField('story_points', this.value)"
+                           class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Hours (Est. / Logged)</label>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-sm">{{ ticket.estimated_hours or 0 }}h est. / {{ ticket.logged_hours or 0 }}h logged</span>
+                    </div>
+                    {% if ticket.estimated_hours and ticket.estimated_hours > 0 %}
+                    <div class="w-full h-2 dark:bg-navy bg-gray-200 rounded-full overflow-hidden">
+                        {% set pct = ((ticket.logged_hours or 0) / ticket.estimated_hours * 100)|int %}
+                        <div class="h-full rounded-full {% if pct > 100 %}bg-rose{% elif pct > 75 %}bg-amber{% else %}bg-electric{% endif %}" style="width: {{ [pct, 100]|min }}%"></div>
+                    </div>
+                    {% endif %}
+                    <div class="mt-2" x-data="{ hours: '' }">
+                        <div class="flex gap-2">
+                            <input type="number" x-model="hours" min="0.5" step="0.5" placeholder="Log hours"
+                                   class="flex-1 px-3 py-1.5 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                            <button @click="logTime(hours); hours = ''" class="px-3 py-1.5 bg-electric text-white rounded-lg text-xs">Log</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Labels -->
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4">
+                <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-2">Labels</label>
+                <div class="flex flex-wrap gap-1">
+                    {% for label in ticket.labels %}
+                    <span class="text-xs px-2 py-0.5 rounded-full text-white" style="background: {{ label.color }}">{{ label.name }}</span>
+                    {% endfor %}
+                    {% if not ticket.labels %}
+                    <span class="text-xs dark:text-gray-500 text-gray-400">No labels</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Watchers -->
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4">
+                <div class="flex items-center justify-between mb-2">
+                    <label class="text-xs font-medium dark:text-gray-400 text-gray-500">Watchers</label>
+                    <form method="POST" action="{{ url_for('tickets.toggle_watch', key=project.key, ticket_key=ticket.ticket_key) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="text-xs text-electric hover:underline">
+                            {{ 'Unwatch' if is_watching else 'Watch' }}
+                        </button>
+                    </form>
+                </div>
+                <div class="flex -space-x-1">
+                    {% for w in ticket.watchers %}
+                    <div class="w-6 h-6 rounded-full bg-electric flex items-center justify-center text-white text-xs font-bold border-2 dark:border-navy-light border-white" title="{{ w.full_name }}">{{ w.get_initials() }}</div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Attachments -->
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4">
+                <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-2">Attachments</label>
+                {% for att in ticket.attachments.all() %}
+                <a href="{{ att.file_path }}" target="_blank" class="flex items-center gap-2 text-sm hover:text-electric mb-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+                    {{ att.filename }}
+                </a>
+                {% endfor %}
+                <form method="POST" action="{{ url_for('tickets.upload_attachment', key=project.key, ticket_key=ticket.ticket_key) }}" enctype="multipart/form-data" class="mt-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="file" name="file" onchange="this.form.submit()" class="text-xs w-full">
+                </form>
+            </div>
+
+            <!-- Delete -->
+            {% if current_user.role in ('admin', 'manager') %}
+            <form method="POST" action="{{ url_for('tickets.delete_ticket', key=project.key, ticket_key=ticket.ticket_key) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="w-full px-4 py-2 bg-rose/10 text-rose rounded-lg text-sm hover:bg-rose/20 transition-colors" onclick="return confirm('Delete this ticket?')">
+                    Delete Ticket
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const projectKey = '{{ project.key }}';
+const ticketKey = '{{ ticket.ticket_key }}';
+
+function updateField(field, value) {
+    fetchWithCSRF(`/projects/${projectKey}/tickets/${ticketKey}/edit`, {
+        method: 'POST',
+        body: JSON.stringify({ field, value })
+    }).then(r => r.json()).then(data => {
+        if (data.success) showToast('Updated');
+        else showToast(data.error || 'Failed', 'error');
+    }).catch(() => showToast('Failed to update', 'error'));
+}
+
+function updateStatus(status) {
+    fetchWithCSRF(`/projects/${projectKey}/tickets/${ticketKey}/status`, {
+        method: 'POST',
+        body: JSON.stringify({ status })
+    }).then(r => r.json()).then(data => {
+        if (data.success) showToast('Status updated');
+        else showToast(data.error || 'Failed', 'error');
+    });
+}
+
+function assignTicket(userId) {
+    fetchWithCSRF(`/projects/${projectKey}/tickets/${ticketKey}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({ assigned_to: userId })
+    }).then(r => r.json()).then(data => {
+        if (data.success) showToast('Assignee updated');
+        else showToast(data.error || 'Failed', 'error');
+    });
+}
+
+function submitComment(content, isInternal) {
+    if (!content.trim()) return;
+    fetchWithCSRF(`/projects/${projectKey}/tickets/${ticketKey}/comment`, {
+        method: 'POST',
+        body: JSON.stringify({ content, is_internal: isInternal })
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            showToast('Comment added');
+            location.reload();
+        } else showToast(data.error || 'Failed', 'error');
+    });
+}
+
+function logTime(hours) {
+    if (!hours || hours <= 0) return;
+    fetchWithCSRF(`/projects/${projectKey}/tickets/${ticketKey}/log-time`, {
+        method: 'POST',
+        body: JSON.stringify({ hours: parseFloat(hours) })
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            showToast(`${hours}h logged`);
+            location.reload();
+        }
+    });
+}
+</script>
+{% endblock %}

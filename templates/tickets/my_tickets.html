@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}My Tickets - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-4">
+    <h1 class="text-2xl font-bold">My Tickets</h1>
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 overflow-hidden">
+        {% if tickets %}
+        <table class="w-full">
+            <thead class="dark:bg-navy-lighter bg-gray-50 text-left text-sm">
+                <tr>
+                    <th class="px-4 py-3 font-medium w-24">Key</th>
+                    <th class="px-4 py-3 font-medium">Title</th>
+                    <th class="px-4 py-3 font-medium w-20">Type</th>
+                    <th class="px-4 py-3 font-medium w-24">Priority</th>
+                    <th class="px-4 py-3 font-medium w-28">Status</th>
+                    <th class="px-4 py-3 font-medium w-24">Project</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y dark:divide-navy-border divide-gray-200">
+                {% for ticket in tickets %}
+                <tr class="dark:hover:bg-navy-lighter/50 hover:bg-gray-50 {% if ticket.deadline_urgency() == 'red' %}bg-rose/5{% endif %}">
+                    <td class="px-4 py-3">
+                        <a href="{{ url_for('tickets.ticket_detail', key=ticket.project.key, ticket_key=ticket.ticket_key) }}" class="font-mono text-xs text-electric hover:underline">{{ ticket.ticket_key }}</a>
+                    </td>
+                    <td class="px-4 py-3 text-sm">
+                        <a href="{{ url_for('tickets.ticket_detail', key=ticket.project.key, ticket_key=ticket.ticket_key) }}" class="hover:text-electric">{{ ticket.title }}</a>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="text-xs px-1.5 py-0.5 rounded
+                            {% if ticket.type == 'bug' %}bg-rose/10 text-rose
+                            {% elif ticket.type == 'story' %}bg-emerald/10 text-emerald
+                            {% elif ticket.type == 'epic' %}bg-purple-500/10 text-purple-500
+                            {% else %}bg-electric/10 text-electric{% endif %}">{{ ticket.type }}</span>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="text-xs px-2 py-0.5 rounded-full font-medium
+                            {% if ticket.priority == 'critical' %}bg-rose/10 text-rose
+                            {% elif ticket.priority == 'high' %}bg-orange-500/10 text-orange-500
+                            {% elif ticket.priority == 'medium' %}bg-amber/10 text-amber
+                            {% else %}bg-gray-500/10 dark:text-gray-400{% endif %}">{{ ticket.priority }}</span>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="text-xs px-2 py-0.5 rounded-full dark:bg-navy-lighter bg-gray-100 capitalize">{{ ticket.status|replace('_', ' ') }}</span>
+                    </td>
+                    <td class="px-4 py-3 text-xs font-mono dark:text-gray-400 text-gray-500">{{ ticket.project.key }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="p-12 text-center">
+            <svg class="w-12 h-12 mx-auto dark:text-gray-600 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            <p class="dark:text-gray-500 text-gray-400 text-sm">No tickets assigned to you or created by you</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

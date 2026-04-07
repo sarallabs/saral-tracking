@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Backlog - {{ project.name }} - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-4">
+    <div class="flex items-center justify-between flex-wrap gap-3">
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('projects.project_overview', key=project.key) }}" class="dark:text-gray-400 text-gray-500 hover:text-electric">{{ project.key }}</a>
+            <span class="dark:text-gray-600 text-gray-300">/</span>
+            <h1 class="text-xl font-bold">Backlog</h1>
+            <span class="text-sm dark:text-gray-400 text-gray-500">({{ tickets|length }} tickets)</span>
+        </div>
+        {% if current_user.role in ('admin', 'manager', 'developer') %}
+        <a href="{{ url_for('tickets.create_ticket', key=project.key) }}" class="px-3 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Create Ticket
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Filters -->
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4">
+        <form method="GET" class="flex items-center gap-3 flex-wrap">
+            <input type="text" name="search" value="{{ request.args.get('search', '') }}" placeholder="Search tickets..."
+                   class="px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm flex-1 min-w-[200px] focus:outline-none focus:ring-2 focus:ring-electric">
+            <select name="status" class="text-sm rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 px-3 py-2">
+                <option value="">All Statuses</option>
+                {% for s in ['backlog', 'todo', 'in_progress', 'in_review', 'testing', 'done', 'cancelled'] %}
+                <option value="{{ s }}" {% if request.args.get('status') == s %}selected{% endif %}>{{ s|replace('_', ' ')|capitalize }}</option>
+                {% endfor %}
+            </select>
+            <select name="priority" class="text-sm rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 px-3 py-2">
+                <option value="">All Priorities</option>
+                {% for p in ['critical', 'high', 'medium', 'low'] %}
+                <option value="{{ p }}" {% if request.args.get('priority') == p %}selected{% endif %}>{{ p|capitalize }}</option>
+                {% endfor %}
+            </select>
+            <select name="type" class="text-sm rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 px-3 py-2">
+                <option value="">All Types</option>
+                {% for t in ['story', 'task', 'bug', 'epic', 'subtask', 'improvement'] %}
+                <option value="{{ t }}" {% if request.args.get('type') == t %}selected{% endif %}>{{ t|capitalize }}</option>
+                {% endfor %}
+            </select>
+            <select name="assignee" class="text-sm rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 px-3 py-2">
+                <option value="">All Assignees</option>
+                {% for m in members %}
+                <option value="{{ m.id }}" {% if request.args.get('assignee') == m.id|string %}selected{% endif %}>{{ m.full_name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="px-4 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors">Filter</button>
+            <a href="{{ url_for('projects.project_backlog', key=project.key) }}" class="px-4 py-2 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm hover:opacity-80">Clear</a>
+        </form>
+    </div>
+
+    <!-- Ticket List -->
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 overflow-hidden">
+        {% if tickets %}
+        <table class="w-full">
+            <thead class="dark:bg-navy-lighter bg-gray-50 text-left text-sm">
+                <tr>
+                    <th class="px-4 py-3 font-medium w-24">Key</th>
+                    <th class="px-4 py-3 font-medium">Title</th>
+                    <th class="px-4 py-3 font-medium w-20">Type</th>
+                    <th class="px-4 py-3 font-medium w-24">Priority</th>
+                    <th class="px-4 py-3 font-medium w-28">Status</th>
+                    <th class="px-4 py-3 font-medium w-32">Assignee</th>
+                    <th class="px-4 py-3 font-medium w-24">Points</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y dark:divide-navy-border divide-gray-200">
+                {% for ticket in tickets %}
+                <tr class="dark:hover:bg-navy-lighter/50 hover:bg-gray-50 transition-colors {% if ticket.deadline_urgency() == 'red' %}bg-rose/5{% endif %}">
+                    <td class="px-4 py-3">
+                        <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=ticket.ticket_key) }}" 
+                           class="font-mono text-xs text-electric hover:underline">{{ ticket.ticket_key }}</a>
+                    </td>
+                    <td class="px-4 py-3">
+                        <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=ticket.ticket_key) }}" 
+                           class="text-sm hover:text-electric transition-colors">{{ ticket.title }}</a>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="text-xs px-1.5 py-0.5 rounded
+                            {% if ticket.type == 'bug' %}bg-rose/10 text-rose
+                            {% elif ticket.type == 'story' %}bg-emerald/10 text-emerald
+                            {% elif ticket.type == 'epic' %}bg-purple-500/10 text-purple-500
+                            {% else %}bg-electric/10 text-electric{% endif %}">{{ ticket.type }}</span>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="text-xs px-2 py-0.5 rounded-full font-medium
+                            {% if ticket.priority == 'critical' %}bg-rose/10 text-rose
+                            {% elif ticket.priority == 'high' %}bg-orange-500/10 text-orange-500
+                            {% elif ticket.priority == 'medium' %}bg-amber/10 text-amber
+                            {% else %}bg-gray-500/10 dark:text-gray-400 text-gray-500{% endif %}">{{ ticket.priority }}</span>
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="text-xs px-2 py-0.5 rounded-full dark:bg-navy-lighter bg-gray-100 dark:text-gray-300 text-gray-600 capitalize">{{ ticket.status|replace('_', ' ') }}</span>
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if ticket.assignee %}
+                        <div class="flex items-center gap-2">
+                            <div class="w-5 h-5 rounded-full bg-electric flex items-center justify-center text-white text-xs">{{ ticket.assignee.get_initials() }}</div>
+                            <span class="text-sm truncate">{{ ticket.assignee.full_name }}</span>
+                        </div>
+                        {% else %}
+                        <span class="text-xs dark:text-gray-500 text-gray-400">Unassigned</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-sm dark:text-gray-400 text-gray-500">{{ ticket.story_points or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="p-12 text-center">
+            <svg class="w-12 h-12 mx-auto dark:text-gray-600 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            <p class="dark:text-gray-500 text-gray-400">No tickets found</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

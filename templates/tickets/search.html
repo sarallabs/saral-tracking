@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Search - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-4">
+    <h1 class="text-2xl font-bold">Search Tickets</h1>
+
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4">
+        <form method="GET" class="flex items-center gap-3 flex-wrap">
+            <input type="text" name="q" value="{{ q }}" placeholder="Search by title, description, or ticket key..."
+                   class="flex-1 min-w-[300px] px-4 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-electric" autofocus>
+            <select name="project" class="px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                <option value="">All Projects</option>
+                {% for p in projects %}
+                <option value="{{ p.key }}" {% if request.args.get('project') == p.key %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+            </select>
+            <select name="status" class="px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                <option value="">All Statuses</option>
+                {% for s in ['backlog', 'todo', 'in_progress', 'in_review', 'testing', 'done', 'cancelled'] %}
+                <option value="{{ s }}" {% if request.args.get('status') == s %}selected{% endif %}>{{ s|replace('_', ' ')|capitalize }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="px-4 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium">Search</button>
+        </form>
+    </div>
+
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 overflow-hidden">
+        {% if tickets %}
+        <div class="divide-y dark:divide-navy-border divide-gray-200">
+            {% for ticket in tickets %}
+            <a href="{{ url_for('tickets.ticket_detail', key=ticket.project.key, ticket_key=ticket.ticket_key) }}"
+               class="flex items-center justify-between px-5 py-3 dark:hover:bg-navy-lighter/50 hover:bg-gray-50 transition-colors">
+                <div class="flex items-center gap-3 min-w-0">
+                    <span class="font-mono text-xs dark:text-gray-400 text-gray-500 flex-shrink-0">{{ ticket.ticket_key }}</span>
+                    <span class="text-sm truncate">{{ ticket.title }}</span>
+                </div>
+                <div class="flex items-center gap-2 flex-shrink-0 ml-3">
+                    <span class="text-xs px-2 py-0.5 rounded-full dark:bg-navy-lighter bg-gray-100 dark:text-gray-300 text-gray-600 capitalize">{{ ticket.status|replace('_', ' ') }}</span>
+                    {% if ticket.assignee %}
+                    <div class="w-5 h-5 rounded-full bg-electric flex items-center justify-center text-white text-xs">{{ ticket.assignee.get_initials() }}</div>
+                    {% endif %}
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% elif q %}
+        <div class="p-12 text-center">
+            <p class="dark:text-gray-500 text-gray-400">No tickets found for "{{ q }}"</p>
+        </div>
+        {% else %}
+        <div class="p-12 text-center">
+            <svg class="w-12 h-12 mx-auto dark:text-gray-600 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            <p class="dark:text-gray-500 text-gray-400">Start typing to search tickets</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

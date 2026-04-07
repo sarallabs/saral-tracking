@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Board - {{ project.name }} - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-4">
+    <!-- Header -->
+    <div class="flex items-center justify-between flex-wrap gap-3">
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('projects.project_overview', key=project.key) }}" class="dark:text-gray-400 text-gray-500 hover:text-electric">
+                {{ project.key }}
+            </a>
+            <span class="dark:text-gray-600 text-gray-300">/</span>
+            <h1 class="text-xl font-bold">Board</h1>
+        </div>
+        {% if current_user.role in ('admin', 'manager', 'developer') %}
+        <a href="{{ url_for('tickets.create_ticket', key=project.key) }}" id="quick-create-btn"
+           class="px-3 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Create
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Filters -->
+    <div class="flex items-center gap-3 flex-wrap" x-data="{ showFilters: false }">
+        <button @click="showFilters = !showFilters" class="px-3 py-1.5 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm flex items-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
+            Filter
+        </button>
+        <div x-show="showFilters" class="flex items-center gap-2 flex-wrap">
+            <form method="GET" class="flex items-center gap-2 flex-wrap">
+                <select name="assignee" onchange="this.form.submit()" class="text-sm rounded-lg dark:bg-navy-lighter bg-gray-100 border-0 px-3 py-1.5">
+                    <option value="">All Assignees</option>
+                    {% for m in members %}
+                    <option value="{{ m.id }}" {% if request.args.get('assignee') == m.id|string %}selected{% endif %}>{{ m.full_name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="priority" onchange="this.form.submit()" class="text-sm rounded-lg dark:bg-navy-lighter bg-gray-100 border-0 px-3 py-1.5">
+                    <option value="">All Priorities</option>
+                    {% for p in ['critical', 'high', 'medium', 'low'] %}
+                    <option value="{{ p }}" {% if request.args.get('priority') == p %}selected{% endif %}>{{ p|capitalize }}</option>
+                    {% endfor %}
+                </select>
+                <select name="type" onchange="this.form.submit()" class="text-sm rounded-lg dark:bg-navy-lighter bg-gray-100 border-0 px-3 py-1.5">
+                    <option value="">All Types</option>
+                    {% for t in ['story', 'task', 'bug', 'epic', 'subtask', 'improvement'] %}
+                    <option value="{{ t }}" {% if request.args.get('type') == t %}selected{% endif %}>{{ t|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+    </div>
+
+    <!-- Kanban Board -->
+    <div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 70vh;">
+        {% for status in statuses %}
+        <div class="flex-shrink-0 w-72">
+            <div class="dark:bg-navy-lighter/50 bg-gray-100 rounded-xl p-3">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold uppercase tracking-wider dark:text-gray-400 text-gray-500">
+                        {{ status|replace('_', ' ') }}
+                    </h3>
+                    <span class="text-xs dark:bg-navy-border bg-gray-200 px-2 py-0.5 rounded-full">{{ columns[status]|length }}</span>
+                </div>
+                <div class="space-y-2 min-h-[200px] kanban-column" data-status="{{ status }}"
+                     ondragover="event.preventDefault(); this.classList.add('ring-2', 'ring-electric/50')"
+                     ondragleave="this.classList.remove('ring-2', 'ring-electric/50')"
+                     ondrop="handleDrop(event, '{{ status }}')">
+                    {% for ticket in columns[status] %}
+                    <div class="dark:bg-navy-light bg-white rounded-lg border dark:border-navy-border border-gray-200 p-3 cursor-move hover:border-electric/50 transition-all
+                         {% if ticket.deadline_urgency() == 'red' %}deadline-red border-rose{% endif %}"
+                         draggable="true" data-ticket-id="{{ ticket.id }}"
+                         ondragstart="event.dataTransfer.setData('text/plain', '{{ ticket.id }}'); this.classList.add('opacity-50')"
+                         ondragend="this.classList.remove('opacity-50')">
+                        <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=ticket.ticket_key) }}" class="block">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-mono text-xs dark:text-gray-400 text-gray-500">{{ ticket.ticket_key }}</span>
+                                {% set urgency = ticket.deadline_urgency() %}
+                                {% if urgency %}
+                                <span class="w-2 h-2 rounded-full {% if urgency == 'green' %}bg-emerald{% elif urgency == 'yellow' %}bg-amber{% elif urgency == 'orange' %}bg-orange-500{% else %}bg-rose{% endif %}"></span>
+                                {% endif %}
+                            </div>
+                            <p class="text-sm font-medium mb-2 line-clamp-2">{{ ticket.title }}</p>
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-1.5">
+                                    <!-- Type icon -->
+                                    <span class="text-xs px-1.5 py-0.5 rounded 
+                                        {% if ticket.type == 'bug' %}bg-rose/10 text-rose
+                                        {% elif ticket.type == 'story' %}bg-emerald/10 text-emerald
+                                        {% elif ticket.type == 'epic' %}bg-purple-500/10 text-purple-500
+                                        {% else %}bg-electric/10 text-electric{% endif %}">
+                                        {{ ticket.type }}
+                                    </span>
+                                    <span class="text-xs px-1.5 py-0.5 rounded
+                                        {% if ticket.priority == 'critical' %}bg-rose/10 text-rose
+                                        {% elif ticket.priority == 'high' %}bg-orange-500/10 text-orange-500
+                                        {% elif ticket.priority == 'medium' %}bg-amber/10 text-amber
+                                        {% else %}bg-gray-500/10 dark:text-gray-400 text-gray-500{% endif %}">
+                                        {{ ticket.priority[0]|upper }}
+                                    </span>
+                                </div>
+                                {% if ticket.assignee %}
+                                <div class="w-6 h-6 rounded-full bg-electric flex items-center justify-center text-white text-xs font-bold" title="{{ ticket.assignee.full_name }}">
+                                    {{ ticket.assignee.get_initials() }}
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% if ticket.story_points %}
+                            <div class="mt-2 text-xs dark:text-gray-500 text-gray-400">{{ ticket.story_points }} pts</div>
+                            {% endif %}
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function handleDrop(event, newStatus) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('ring-2', 'ring-electric/50');
+    const ticketId = event.dataTransfer.getData('text/plain');
+    
+    fetchWithCSRF(`/api/projects/{{ project.key }}/board/move`, {
+        method: 'POST',
+        body: JSON.stringify({ ticket_id: parseInt(ticketId), status: newStatus })
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            showToast(`Ticket moved to ${newStatus.replace('_', ' ')}`);
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showToast(data.error || 'Failed to move ticket', 'error');
+        }
+    }).catch(() => showToast('Failed to move ticket', 'error'));
+}
+</script>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ user.full_name }} - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center gap-4">
+        <div class="w-16 h-16 rounded-full bg-electric flex items-center justify-center text-white text-2xl font-bold">
+            {{ user.get_initials() }}
+        </div>
+        <div>
+            <h1 class="text-2xl font-bold">{{ user.full_name }}</h1>
+            <p class="dark:text-gray-400 text-gray-500">@{{ user.username }} &middot; {{ user.role|capitalize }} &middot; {{ user.email }}</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-1">
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
+                <h3 class="font-semibold mb-4">Ticket Distribution</h3>
+                <div class="space-y-2">
+                    {% for status, count in status_counts.items() %}
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm capitalize">{{ status|replace('_', ' ') }}</span>
+                        <span class="text-sm font-medium">{{ count }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2 space-y-6">
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200">
+                <div class="px-5 py-4 border-b dark:border-navy-border border-gray-200">
+                    <h3 class="font-semibold">Open Tickets</h3>
+                </div>
+                <div class="divide-y dark:divide-navy-border divide-gray-200">
+                    {% for ticket in open_tickets %}
+                    <a href="{{ url_for('tickets.ticket_detail', key=ticket.project.key, ticket_key=ticket.ticket_key) }}"
+                       class="flex items-center justify-between px-5 py-3 dark:hover:bg-navy-lighter/50 hover:bg-gray-50">
+                        <div class="flex items-center gap-3">
+                            <span class="font-mono text-xs dark:text-gray-400 text-gray-500">{{ ticket.ticket_key }}</span>
+                            <span class="text-sm">{{ ticket.title }}</span>
+                        </div>
+                        <span class="text-xs px-2 py-0.5 rounded-full dark:bg-navy-lighter bg-gray-100 capitalize">{{ ticket.status|replace('_', ' ') }}</span>
+                    </a>
+                    {% else %}
+                    <div class="px-5 py-4 text-sm dark:text-gray-500 text-gray-400 text-center">No open tickets</div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200">
+                <div class="px-5 py-4 border-b dark:border-navy-border border-gray-200">
+                    <h3 class="font-semibold">Recent Activity</h3>
+                </div>
+                <div class="divide-y dark:divide-navy-border divide-gray-200">
+                    {% for log in recent_activity %}
+                    <div class="px-5 py-3 flex items-center gap-3">
+                        <div class="w-1.5 h-1.5 rounded-full bg-electric"></div>
+                        <span class="text-sm">{{ log.action|replace('_', ' ') }} {% if log.new_value %}<span class="dark:text-gray-400 text-gray-500">{{ log.new_value[:60] }}</span>{% endif %}</span>
+                        <span class="text-xs dark:text-gray-500 text-gray-400 ml-auto">{{ log.created_at.strftime('%b %d, %H:%M') if log.created_at else '' }}</span>
+                    </div>
+                    {% else %}
+                    <div class="px-5 py-4 text-sm dark:text-gray-500 text-gray-400 text-center">No recent activity</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

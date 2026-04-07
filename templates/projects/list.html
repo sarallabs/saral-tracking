@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Projects - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-bold">Projects</h1>
+        {% if current_user.role in ('admin', 'manager') %}
+        <a href="{{ url_for('projects.create_project') }}" class="px-4 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            New Project
+        </a>
+        {% endif %}
+    </div>
+
+    {% if projects %}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {% for project in projects %}
+        <a href="{{ url_for('projects.project_overview', key=project.key) }}" 
+           class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5 dark:hover:border-electric/50 hover:border-electric/50 transition-all group">
+            <div class="flex items-start justify-between mb-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold" style="background: {{ project.color }}">
+                        {{ project.key[:2] }}
+                    </div>
+                    <div>
+                        <h3 class="font-semibold group-hover:text-electric transition-colors">{{ project.name }}</h3>
+                        <p class="text-xs font-mono dark:text-gray-400 text-gray-500">{{ project.key }}</p>
+                    </div>
+                </div>
+                <span class="text-xs px-2 py-1 rounded-full dark:bg-navy-lighter bg-gray-100 capitalize dark:text-gray-300 text-gray-600">{{ project.status|replace('_', ' ') }}</span>
+            </div>
+            {% if project.description %}
+            <p class="text-sm dark:text-gray-400 text-gray-500 line-clamp-2 mb-3">{{ project.description }}</p>
+            {% endif %}
+            <div class="flex items-center gap-4 text-xs dark:text-gray-500 text-gray-400">
+                <span>{{ project.tickets.count() }} tickets</span>
+                <span>{{ project.members.count() }} members</span>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-12 text-center">
+        <svg class="w-16 h-16 mx-auto dark:text-gray-600 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+        <h3 class="text-lg font-semibold mb-1">No projects yet</h3>
+        <p class="dark:text-gray-400 text-gray-500 text-sm mb-4">Create your first project to start tracking work.</p>
+        {% if current_user.role in ('admin', 'manager') %}
+        <a href="{{ url_for('projects.create_project') }}" class="px-4 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Create Project
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

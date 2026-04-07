@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <!-- Project Header -->
+    <div class="flex items-center justify-between flex-wrap gap-4">
+        <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-xl flex items-center justify-center text-white text-xl font-bold" style="background: {{ project.color }}">
+                {{ project.key[:2] }}
+            </div>
+            <div>
+                <h1 class="text-2xl font-bold">{{ project.name }}</h1>
+                <p class="dark:text-gray-400 text-gray-500 text-sm">{{ project.key }} &middot; {{ project.status|replace('_', ' ')|capitalize }}</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+            <a href="{{ url_for('projects.project_board', key=project.key) }}" data-shortcut="board"
+               class="px-3 py-2 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm hover:text-electric transition-colors">Board</a>
+            <a href="{{ url_for('projects.project_backlog', key=project.key) }}"
+               class="px-3 py-2 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm hover:text-electric transition-colors">Backlog</a>
+            <a href="{{ url_for('projects.project_roadmap', key=project.key) }}"
+               class="px-3 py-2 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm hover:text-electric transition-colors">Roadmap</a>
+            <a href="{{ url_for('projects.project_members_page', key=project.key) }}"
+               class="px-3 py-2 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm hover:text-electric transition-colors">Members</a>
+            {% if current_user.role in ('admin', 'manager') %}
+            <a href="{{ url_for('projects.edit_project', key=project.key) }}"
+               class="px-3 py-2 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm hover:text-electric transition-colors">Settings</a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if project.description %}
+    <p class="dark:text-gray-400 text-gray-500">{{ project.description }}</p>
+    {% endif %}
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        {% for status, count in ticket_stats.items() %}
+        <div class="dark:bg-navy-light bg-white rounded-lg border dark:border-navy-border border-gray-200 p-3 text-center">
+            <p class="text-2xl font-bold">{{ count }}</p>
+            <p class="text-xs dark:text-gray-400 text-gray-500 capitalize">{{ status|replace('_', ' ') }}</p>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Active Sprint -->
+        <div class="lg:col-span-1">
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
+                <h3 class="font-semibold mb-3">Active Sprint</h3>
+                {% if active_sprint %}
+                <a href="{{ url_for('sprints.sprint_detail', key=project.key, sprint_id=active_sprint.id) }}" class="block hover:text-electric">
+                    <p class="font-medium">{{ active_sprint.name }}</p>
+                    {% if active_sprint.goal %}
+                    <p class="text-sm dark:text-gray-400 text-gray-500 mt-1">{{ active_sprint.goal[:100] }}</p>
+                    {% endif %}
+                    {% if active_sprint.end_date %}
+                    <p class="text-xs dark:text-gray-500 text-gray-400 mt-2">Ends: {{ active_sprint.end_date.strftime('%b %d, %Y') }}</p>
+                    {% endif %}
+                </a>
+                {% else %}
+                <p class="dark:text-gray-500 text-gray-400 text-sm">No active sprint</p>
+                {% if current_user.role in ('admin', 'manager') %}
+                <a href="{{ url_for('sprints.create_sprint', key=project.key) }}" class="text-sm text-electric hover:underline mt-2 inline-block">Create Sprint</a>
+                {% endif %}
+                {% endif %}
+            </div>
+
+            {% if current_user.role in ('admin', 'manager', 'developer') %}
+            <a href="{{ url_for('tickets.create_ticket', key=project.key) }}" id="quick-create-btn"
+               class="mt-4 w-full px-4 py-3 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Create Ticket
+            </a>
+            {% endif %}
+        </div>
+
+        <!-- Recent Tickets -->
+        <div class="lg:col-span-2">
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200">
+                <div class="px-5 py-4 border-b dark:border-navy-border border-gray-200 flex justify-between items-center">
+                    <h3 class="font-semibold">Recent Tickets</h3>
+                    <a href="{{ url_for('projects.project_backlog', key=project.key) }}" class="text-sm text-electric hover:underline">View all</a>
+                </div>
+                <div class="divide-y dark:divide-navy-border divide-gray-200">
+                    {% for ticket in recent_tickets %}
+                    <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=ticket.ticket_key) }}"
+                       class="flex items-center justify-between px-5 py-3 dark:hover:bg-navy-lighter/50 hover:bg-gray-50 transition-colors">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <span class="font-mono text-xs dark:text-gray-400 text-gray-500">{{ ticket.ticket_key }}</span>
+                            <span class="text-sm truncate">{{ ticket.title }}</span>
+                        </div>
+                        <div class="flex items-center gap-2 flex-shrink-0 ml-3">
+                            <span class="text-xs px-2 py-0.5 rounded-full font-medium
+                                {% if ticket.priority == 'critical' %}bg-rose/10 text-rose
+                                {% elif ticket.priority == 'high' %}bg-orange-500/10 text-orange-500
+                                {% elif ticket.priority == 'medium' %}bg-amber/10 text-amber
+                                {% else %}bg-gray-500/10 dark:text-gray-400 text-gray-500{% endif %}">
+                                {{ ticket.priority }}
+                            </span>
+                            <span class="text-xs px-2 py-0.5 rounded-full dark:bg-navy-lighter bg-gray-100 dark:text-gray-300 text-gray-600 capitalize">
+                                {{ ticket.status|replace('_', ' ') }}
+                            </span>
+                        </div>
+                    </a>
+                    {% else %}
+                    <div class="px-5 py-8 text-center">
+                        <p class="dark:text-gray-500 text-gray-400 text-sm">No tickets yet</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200">
+        <div class="px-5 py-4 border-b dark:border-navy-border border-gray-200">
+            <h3 class="font-semibold">Recent Activity</h3>
+        </div>
+        <div class="divide-y dark:divide-navy-border divide-gray-200">
+            {% for log in recent_activity %}
+            <div class="px-5 py-3 flex items-center gap-3">
+                <div class="w-6 h-6 rounded-full bg-electric/10 flex items-center justify-center text-electric text-xs font-bold">{{ log.user.get_initials() if log.user else '?' }}</div>
+                <span class="text-sm"><strong>{{ log.user.full_name if log.user else 'System' }}</strong> {{ log.action|replace('_', ' ') }} {% if log.new_value %}<span class="dark:text-gray-400 text-gray-500">{{ log.new_value[:60] }}</span>{% endif %}</span>
+                <span class="text-xs dark:text-gray-500 text-gray-400 ml-auto">{{ log.created_at.strftime('%b %d, %H:%M') if log.created_at else '' }}</span>
+            </div>
+            {% else %}
+            <div class="px-5 py-4 text-center text-sm dark:text-gray-500 text-gray-400">No activity yet</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

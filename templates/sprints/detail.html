@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}{{ sprint.name }} - {{ project.name }} - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-4">
+    <div class="flex items-center justify-between flex-wrap gap-3">
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('projects.project_overview', key=project.key) }}" class="dark:text-gray-400 text-gray-500 hover:text-electric">{{ project.key }}</a>
+            <span class="dark:text-gray-600 text-gray-300">/</span>
+            <h1 class="text-xl font-bold">{{ sprint.name }}</h1>
+            <span class="text-xs px-2 py-0.5 rounded-full capitalize
+                {% if sprint.status == 'active' %}bg-emerald/10 text-emerald
+                {% elif sprint.status == 'completed' %}bg-gray-500/10 dark:text-gray-400
+                {% else %}bg-electric/10 text-electric{% endif %}">{{ sprint.status }}</span>
+        </div>
+        <div class="flex items-center gap-2">
+            {% if sprint.status == 'planning' and current_user.role in ('admin', 'manager') %}
+            <form method="POST" action="{{ url_for('sprints.start_sprint', key=project.key, sprint_id=sprint.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="px-4 py-2 bg-emerald hover:bg-emerald/80 text-white rounded-lg text-sm font-medium">Start Sprint</button>
+            </form>
+            {% elif sprint.status == 'active' and current_user.role in ('admin', 'manager') %}
+            <form method="POST" action="{{ url_for('sprints.complete_sprint', key=project.key, sprint_id=sprint.id) }}" x-data>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <select name="incomplete_action" class="text-sm rounded-lg dark:bg-navy-lighter bg-gray-100 border-0 px-3 py-2">
+                    <option value="backlog">Move incomplete to backlog</option>
+                    <option value="next">Move to next sprint</option>
+                </select>
+                <button type="submit" class="px-4 py-2 bg-amber hover:bg-amber/80 text-white rounded-lg text-sm font-medium" onclick="return confirm('Complete this sprint?')">Complete Sprint</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if sprint.goal %}
+    <p class="dark:text-gray-400 text-gray-500 text-sm">{{ sprint.goal }}</p>
+    {% endif %}
+
+    <!-- Progress -->
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4">
+        <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium">Progress: {{ done }}/{{ total }} tickets</span>
+            <span class="text-sm font-bold">{{ progress }}%</span>
+        </div>
+        <div class="w-full h-3 dark:bg-navy bg-gray-200 rounded-full overflow-hidden">
+            <div class="h-full bg-emerald rounded-full transition-all" style="width: {{ progress }}%"></div>
+        </div>
+        {% if sprint.start_date and sprint.end_date %}
+        <div class="flex justify-between mt-2 text-xs dark:text-gray-500 text-gray-400">
+            <span>{{ sprint.start_date.strftime('%b %d') }}</span>
+            <span>{{ sprint.end_date.strftime('%b %d') }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sprint Board -->
+    <div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 50vh;">
+        {% for status in statuses %}
+        <div class="flex-shrink-0 w-64">
+            <div class="dark:bg-navy-lighter/50 bg-gray-100 rounded-xl p-3">
+                <h3 class="text-sm font-semibold uppercase tracking-wider dark:text-gray-400 text-gray-500 mb-3">
+                    {{ status|replace('_', ' ') }}
+                    <span class="text-xs dark:bg-navy-border bg-gray-200 px-2 py-0.5 rounded-full ml-1">{{ columns[status]|length }}</span>
+                </h3>
+                <div class="space-y-2 min-h-[100px]">
+                    {% for ticket in columns[status] %}
+                    <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=ticket.ticket_key) }}"
+                       class="block dark:bg-navy-light bg-white rounded-lg border dark:border-navy-border border-gray-200 p-3 hover:border-electric/50 transition-all">
+                        <span class="font-mono text-xs dark:text-gray-400 text-gray-500">{{ ticket.ticket_key }}</span>
+                        <p class="text-sm mt-1">{{ ticket.title }}</p>
+                        <div class="flex items-center justify-between mt-2">
+                            <span class="text-xs px-1.5 py-0.5 rounded
+                                {% if ticket.priority == 'critical' %}bg-rose/10 text-rose
+                                {% elif ticket.priority == 'high' %}bg-orange-500/10 text-orange-500
+                                {% else %}bg-gray-500/10 dark:text-gray-400 text-gray-500{% endif %}">{{ ticket.priority[0]|upper }}</span>
+                            {% if ticket.assignee %}
+                            <div class="w-5 h-5 rounded-full bg-electric flex items-center justify-center text-white text-xs">{{ ticket.assignee.get_initials() }}</div>
+                            {% endif %}
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Add tickets from backlog -->
+    {% if backlog_tickets and sprint.status != 'completed' %}
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
+        <h3 class="font-semibold text-sm mb-3">Add Tickets from Backlog</h3>
+        <div class="space-y-2 max-h-60 overflow-y-auto">
+            {% for ticket in backlog_tickets %}
+            <div class="flex items-center justify-between px-3 py-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-50">
+                <div class="flex items-center gap-2">
+                    <span class="font-mono text-xs dark:text-gray-400 text-gray-500">{{ ticket.ticket_key }}</span>
+                    <span class="text-sm">{{ ticket.title }}</span>
+                </div>
+                <button onclick="addToSprint({{ ticket.id }})" class="text-xs px-2 py-1 bg-electric/10 text-electric rounded hover:bg-electric/20">Add</button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function addToSprint(ticketId) {
+    fetchWithCSRF(`/projects/{{ project.key }}/sprints/{{ sprint.id }}/add-ticket`, {
+        method: 'POST',
+        body: JSON.stringify({ ticket_id: ticketId })
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            showToast('Ticket added to sprint');
+            location.reload();
+        }
+    });
+}
+</script>
+{% endblock %}

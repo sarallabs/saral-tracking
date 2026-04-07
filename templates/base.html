@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en" x-data="{ darkMode: localStorage.getItem('darkMode') !== 'false', sidebarOpen: window.innerWidth > 768 }" 
+      :class="{ 'dark': darkMode }">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SaralTrack{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        navy: { DEFAULT: '#0D1117', light: '#161B22', lighter: '#21262D', border: '#30363D' },
+                        electric: { DEFAULT: '#2D8CFF', dark: '#1A6FD1', light: '#58A6FF' },
+                        emerald: '#10B981',
+                        amber: '#F59E0B',
+                        rose: '#EF4444',
+                    },
+                    fontFamily: {
+                        sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <style>
+        [x-cloak] { display: none !important; }
+        .deadline-red { animation: pulse-red 2s infinite; }
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+        }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #30363D; border-radius: 3px; }
+        .toast-enter { animation: slideIn 0.3s ease; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .skeleton { background: linear-gradient(90deg, #21262D 25%, #30363D 50%, #21262D 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        .kanban-ghost { opacity: 0.5; }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="dark:bg-navy bg-gray-50 dark:text-gray-200 text-gray-800 font-sans min-h-screen">
+
+{% if current_user.is_authenticated %}
+<div class="flex h-screen overflow-hidden">
+    <!-- Sidebar -->
+    <aside x-show="sidebarOpen" x-transition
+           class="w-64 flex-shrink-0 dark:bg-navy-light bg-white border-r dark:border-navy-border border-gray-200 flex flex-col h-full z-30 fixed md:relative">
+        <!-- Logo -->
+        <div class="p-4 border-b dark:border-navy-border border-gray-200">
+            <a href="{{ url_for('dashboard.index') }}" class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-electric rounded-lg flex items-center justify-center">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                    </svg>
+                </div>
+                <span class="text-lg font-bold dark:text-white text-gray-900">SaralTrack</span>
+            </a>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="flex-1 overflow-y-auto scrollbar-thin p-3 space-y-1">
+            <a href="{{ url_for('dashboard.index') }}" class="flex items-center gap-3 px-3 py-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100 transition-colors {% if request.endpoint == 'dashboard.index' %}dark:bg-navy-lighter bg-gray-100 text-electric{% endif %}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+                <span>Dashboard</span>
+            </a>
+            <a href="{{ url_for('projects.list_projects') }}" class="flex items-center gap-3 px-3 py-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100 transition-colors {% if 'projects' in (request.endpoint or '') %}dark:bg-navy-lighter bg-gray-100 text-electric{% endif %}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                <span>Projects</span>
+            </a>
+            <a href="{{ url_for('tickets.my_tickets') }}" class="flex items-center gap-3 px-3 py-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100 transition-colors {% if request.endpoint == 'tickets.my_tickets' %}dark:bg-navy-lighter bg-gray-100 text-electric{% endif %}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                <span>My Tickets</span>
+            </a>
+            <a href="{{ url_for('team.team_directory') }}" class="flex items-center gap-3 px-3 py-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100 transition-colors {% if 'team' in (request.endpoint or '') %}dark:bg-navy-lighter bg-gray-100 text-electric{% endif %}">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"/></svg>
+                <span>Team</span>
+            </a>
+
+            {% if current_user.role == 'admin' %}
+            <div class="pt-3 mt-3 border-t dark:border-navy-border border-gray-200">
+                <p class="px-3 py-1 text-xs font-semibold uppercase tracking-wider dark:text-gray-500 text-gray-400">Admin</p>
+                <a href="{{ url_for('auth.users') }}" class="flex items-center gap-3 px-3 py-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <span>Manage Users</span>
+                </a>
+            </div>
+            {% endif %}
+
+            <!-- Project Switcher -->
+            {% if current_user.projects %}
+            <div class="pt-3 mt-3 border-t dark:border-navy-border border-gray-200">
+                <p class="px-3 py-1 text-xs font-semibold uppercase tracking-wider dark:text-gray-500 text-gray-400">My Projects</p>
+                {% for p in current_user.projects[:5] %}
+                <a href="{{ url_for('projects.project_overview', key=p.key) }}" class="flex items-center gap-3 px-3 py-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100 transition-colors">
+                    <div class="w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold" style="background: {{ p.color }}">{{ p.key[0] }}</div>
+                    <span class="truncate text-sm">{{ p.name }}</span>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </nav>
+
+        <!-- User section -->
+        <div class="p-3 border-t dark:border-navy-border border-gray-200">
+            <a href="{{ url_for('auth.profile') }}" class="flex items-center gap-3 px-3 py-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100 transition-colors">
+                <div class="w-8 h-8 rounded-full bg-electric flex items-center justify-center text-white text-sm font-bold">
+                    {{ current_user.get_initials() }}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium truncate">{{ current_user.full_name }}</p>
+                    <p class="text-xs dark:text-gray-500 text-gray-400 capitalize">{{ current_user.role }}</p>
+                </div>
+            </a>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+        <!-- Top Bar -->
+        <header class="dark:bg-navy-light bg-white border-b dark:border-navy-border border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center gap-3">
+                <button @click="sidebarOpen = !sidebarOpen" class="p-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                <!-- Search -->
+                <div class="relative" x-data="{ focused: false }">
+                    <form action="{{ url_for('tickets.search_tickets') }}" method="GET" class="relative">
+                        <input type="text" name="q" id="global-search" placeholder="Search tickets... ( / )" 
+                               class="w-64 lg:w-96 pl-10 pr-4 py-2 rounded-lg dark:bg-navy-lighter bg-gray-100 dark:border-navy-border border-gray-200 border text-sm focus:outline-none focus:ring-2 focus:ring-electric dark:text-gray-200"
+                               @focus="focused = true" @blur="focused = false">
+                        <svg class="w-4 h-4 absolute left-3 top-2.5 dark:text-gray-500 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    </form>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <!-- Dark mode toggle -->
+                <button @click="darkMode = !darkMode; localStorage.setItem('darkMode', darkMode)" 
+                        class="p-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100">
+                    <svg x-show="darkMode" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <svg x-show="!darkMode" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                </button>
+
+                <!-- Notifications -->
+                <div class="relative" x-data="{ open: false, notifications: [], unread: {{ unread_notification_count }} }">
+                    <button @click="open = !open; if(open) fetchNotifications()" class="p-2 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100 relative">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                        <span x-show="unread > 0" x-text="unread" class="absolute -top-1 -right-1 bg-rose text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold"></span>
+                    </button>
+                    <div x-show="open" @click.away="open = false" x-cloak
+                         class="absolute right-0 mt-2 w-80 dark:bg-navy-light bg-white rounded-lg shadow-xl border dark:border-navy-border border-gray-200 z-50 max-h-96 overflow-y-auto">
+                        <div class="p-3 border-b dark:border-navy-border border-gray-200 flex justify-between items-center">
+                            <span class="font-semibold text-sm">Notifications</span>
+                            <button @click="markAllRead()" class="text-xs text-electric hover:underline">Mark all read</button>
+                        </div>
+                        <div id="notification-list">
+                            <template x-for="n in notifications" :key="n.id">
+                                <a :href="n.link || '#'" @click="markRead(n.id)" 
+                                   class="block px-3 py-2 border-b dark:border-navy-border border-gray-100 dark:hover:bg-navy-lighter hover:bg-gray-50 transition-colors"
+                                   :class="{ 'dark:bg-navy/50 bg-blue-50': !n.is_read }">
+                                    <p class="text-sm" x-text="n.message"></p>
+                                    <p class="text-xs dark:text-gray-500 text-gray-400 mt-1" x-text="timeAgo(n.created_at)"></p>
+                                </a>
+                            </template>
+                            <div x-show="notifications.length === 0" class="p-4 text-center text-sm dark:text-gray-500 text-gray-400">No notifications</div>
+                        </div>
+                        <a href="{{ url_for('notifications.all_notifications') }}" class="block p-2 text-center text-sm text-electric hover:underline border-t dark:border-navy-border border-gray-200">View all</a>
+                    </div>
+                </div>
+
+                <!-- User Menu -->
+                <div class="relative" x-data="{ open: false }">
+                    <button @click="open = !open" class="flex items-center gap-2 p-1 rounded-lg dark:hover:bg-navy-lighter hover:bg-gray-100">
+                        <div class="w-8 h-8 rounded-full bg-electric flex items-center justify-center text-white text-sm font-bold">
+                            {{ current_user.get_initials() }}
+                        </div>
+                    </button>
+                    <div x-show="open" @click.away="open = false" x-cloak
+                         class="absolute right-0 mt-2 w-48 dark:bg-navy-light bg-white rounded-lg shadow-xl border dark:border-navy-border border-gray-200 z-50">
+                        <a href="{{ url_for('auth.profile') }}" class="block px-4 py-2 text-sm dark:hover:bg-navy-lighter hover:bg-gray-50">Profile</a>
+                        <a href="{{ url_for('auth.logout') }}" class="block px-4 py-2 text-sm dark:hover:bg-navy-lighter hover:bg-gray-50 text-rose">Logout</a>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Flash Messages -->
+        <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 4000)"
+                 class="toast-enter px-4 py-3 rounded-lg shadow-lg text-sm font-medium flex items-center gap-2
+                 {% if category == 'success' %}bg-emerald text-white
+                 {% elif category == 'error' %}bg-rose text-white
+                 {% elif category == 'warning' %}bg-amber text-white
+                 {% else %}bg-electric text-white{% endif %}">
+                <span>{{ message }}</span>
+                <button @click="show = false" class="ml-2 hover:opacity-75">&times;</button>
+            </div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+        </div>
+
+        <!-- Page Content -->
+        <main class="flex-1 overflow-y-auto p-6">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
+{% else %}
+<!-- Unauthenticated layout -->
+<div class="min-h-screen flex items-center justify-center dark:bg-navy bg-gray-50">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="fixed top-4 right-4 z-50 space-y-2">
+        {% for category, message in messages %}
+        <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 4000)"
+             class="toast-enter px-4 py-3 rounded-lg shadow-lg text-sm font-medium
+             {% if category == 'success' %}bg-emerald text-white
+             {% elif category == 'error' %}bg-rose text-white
+             {% else %}bg-electric text-white{% endif %}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+    {% block auth_content %}{% endblock %}
+</div>
+{% endif %}
+
+<script>
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
+function fetchWithCSRF(url, options = {}) {
+    const defaults = {
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        }
+    };
+    return fetch(url, { ...defaults, ...options });
+}
+
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    const colors = { success: 'bg-emerald', error: 'bg-rose', warning: 'bg-amber', info: 'bg-electric' };
+    const div = document.createElement('div');
+    div.className = `toast-enter px-4 py-3 rounded-lg shadow-lg text-sm font-medium text-white ${colors[type] || colors.info}`;
+    div.innerHTML = `<span>${message}</span>`;
+    container.appendChild(div);
+    setTimeout(() => div.remove(), 4000);
+}
+
+function timeAgo(dateStr) {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString();
+}
+
+function fetchNotifications() {
+    fetch('/api/notifications').then(r => r.json()).then(data => {
+        Alpine.store('notifications', data);
+    });
+}
+
+function markRead(id) {
+    fetchWithCSRF(`/api/notifications/${id}/read`, { method: 'POST' });
+}
+
+function markAllRead() {
+    fetchWithCSRF('/api/notifications/mark-all-read', { method: 'POST' }).then(() => {
+        location.reload();
+    });
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+    
+    if (e.key === '/') {
+        e.preventDefault();
+        document.getElementById('global-search')?.focus();
+    }
+    if (e.key === 'c' && !e.ctrlKey && !e.metaKey) {
+        const createBtn = document.getElementById('quick-create-btn');
+        if (createBtn) createBtn.click();
+    }
+    if (e.key === 'b' && !e.ctrlKey && !e.metaKey) {
+        const boardLink = document.querySelector('[data-shortcut="board"]');
+        if (boardLink) window.location = boardLink.href;
+    }
+});
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>
