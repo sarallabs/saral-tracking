@@ -1,0 +1,16 @@
+# SaralTrack — Apache directives for /saral-tracking subdirectory
+# Place this file at: public_html/saral-tracking/.htaccess
+
+Options -MultiViews
+RewriteEngine On
+
+# Redirect HTTP → HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Let Apache serve real static files directly (faster than Flask)
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# Everything else → Passenger / Flask
+RewriteRule ^ ../saral-tracking/passenger_wsgi.py [L]

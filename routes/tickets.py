@@ -4,8 +4,10 @@ from flask_login import login_required, current_user
 from app import db
 from app.models import (Ticket, TicketStatus, TicketType, TicketPriority, Project, Sprint,
                          Comment, Label, User, UserRole, Attachment, Notification,
-                         ticket_labels, ticket_watchers, ActivityLog)
-from app.routes import require_role, log_activity, create_notification
+                         ticket_labels, ticket_watchers, ActivityLog, TicketLink, LinkType,
+                         CommentReaction, CustomField, TicketCustomFieldValue, Version,
+                         Component)
+from app.routes import require_role, log_activity, create_notification, log_audit
 from werkzeug.utils import secure_filename
 from datetime import datetime, timezone
 import os
@@ -33,12 +35,15 @@ def create_ticket(key):
         soft_deadline = request.form.get('soft_deadline') or None
         hard_deadline = request.form.get('hard_deadline') or None
         label_ids = request.form.getlist('labels')
+        fix_version_id = request.form.get('fix_version_id') or None
 
         if not title:
             flash('Title is required.', 'error')
             return redirect(request.url)
 
         ticket_key = project.next_ticket_key()
+
+        component_id = request.form.get('component_id') or None
 
         ticket = Ticket(
             title=title, description=description, ticket_key=ticket_key,
@@ -50,6 +55,8 @@ def create_ticket(key):
             created_by=current_user.id,
             story_points=int(story_points) if story_points else 0,
             estimated_hours=float(estimated_hours) if estimated_hours else 0,
+            fix_version_id=int(fix_version_id) if fix_version_id else None,
+            component_id=int(component_id) if component_id else None,
         )
 
         if soft_deadline:
@@ -66,6 +73,19 @@ def create_ticket(key):
                 ticket.labels.append(label)
 
         ticket.watchers.append(current_user)
+
+        db.session.flush()  # get ticket.id before saving custom fields
+
+        # Save custom field values
+        import json as _json
+        custom_fields = CustomField.query.filter_by(project_id=project.id).all()
+        for cf in custom_fields:
+            cf_value = request.form.get(f'cf_{cf.id}', '').strip()
+            if cf_value:
+                cfv = TicketCustomFieldValue(
+                    ticket_id=ticket.id, custom_field_id=cf.id, value_text=cf_value
+                )
+                db.session.add(cfv)
 
         log_activity(ticket=ticket, action='ticket_created', new_value=title)
 
@@ -85,9 +105,15 @@ def create_ticket(key):
     sprints = project.sprints.filter(Sprint.status != 'completed').all()
     labels = project.labels.all()
     epics = project.tickets.filter_by(type=TicketType.EPIC.value).all()
+    versions = Version.query.filter_by(
+        project_id=project.id, status='unreleased'
+    ).order_by(Version.release_date.asc().nullslast()).all()
+    custom_fields = CustomField.query.filter_by(project_id=project.id).order_by(CustomField.order).all()
+    components = Component.query.filter_by(project_id=project.id).order_by(Component.name).all()
     return render_template('tickets/create.html',
         project=project, members=members, sprints=sprints,
-        labels=labels, epics=epics)
+        labels=labels, epics=epics, versions=versions, custom_fields=custom_fields,
+        components=components)
 
 
 @tickets_bp.route('/projects/<key>/tickets/<ticket_key>')
@@ -112,11 +138,41 @@ def ticket_detail(key, ticket_key):
     labels = project.labels.all()
     is_watching = current_user in ticket.watchers
 
+    outgoing_links = ticket.outgoing_links.all()
+    incoming_links = ticket.incoming_links.all()
+    link_types = [lt.value for lt in LinkType]
+    project_tickets = project.tickets.filter(
+        Ticket.id != ticket.id
+    ).order_by(Ticket.ticket_key).limit(200).all()
+
+    versions = Version.query.filter_by(project_id=project.id).order_by(
+        Version.release_date.asc().nullslast()
+    ).all()
+    custom_fields = CustomField.query.filter_by(project_id=project.id).order_by(CustomField.order).all()
+    cf_values = {
+        cfv.custom_field_id: cfv.value_text
+        for cfv in ticket.custom_field_values.all()
+    }
+    components = Component.query.filter_by(project_id=project.id).order_by(Component.name).all()
+
+    # Build comment reactions map: comment_id → {emoji: [usernames]}
+    reactions_map = {}
+    for item in comments_html:
+        c = item['comment']
+        rxns = {}
+        for r in c.reactions.all():
+            rxns.setdefault(r.emoji, []).append(r.user.full_name if r.user else '')
+        reactions_map[c.id] = rxns
+
     return render_template('tickets/detail.html',
         project=project, ticket=ticket, desc_html=desc_html,
         comments=comments_html, subtasks=subtasks, activity=activity,
         members=members, sprints=sprints, labels=labels,
-        is_watching=is_watching)
+        is_watching=is_watching,
+        outgoing_links=outgoing_links, incoming_links=incoming_links,
+        link_types=link_types, project_tickets=project_tickets,
+        versions=versions, custom_fields=custom_fields, cf_values=cf_values,
+        reactions_map=reactions_map, components=components)
 
 
 @tickets_bp.route('/projects/<key>/tickets/<ticket_key>/edit', methods=['POST'])
@@ -165,6 +221,25 @@ def edit_ticket(key, ticket_key):
     elif field == 'sprint_id':
         ticket.sprint_id = int(value) if value else None
         log_activity(ticket=ticket, action='sprint_changed', new_value=value)
+    elif field == 'fix_version_id':
+        old = str(ticket.fix_version_id)
+        ticket.fix_version_id = int(value) if value else None
+        log_activity(ticket=ticket, action='fix_version_changed',
+                     old_value=old, new_value=value or '')
+    elif field == 'component_id':
+        old = str(ticket.component_id)
+        ticket.component_id = int(value) if value else None
+        log_activity(ticket=ticket, action='component_changed',
+                     old_value=old, new_value=value or '')
+    elif field == 'labels':
+        import json as _json
+        label_ids = _json.loads(value) if value else []
+        ticket.labels.clear()
+        for lid in label_ids:
+            lbl = Label.query.get(int(lid))
+            if lbl and lbl.project_id == ticket.project_id:
+                ticket.labels.append(lbl)
+        log_activity(ticket=ticket, action='labels_changed')
 
     db.session.commit()
     return jsonify({'success': True})
@@ -403,3 +478,180 @@ def my_tickets():
         (Ticket.assigned_to == current_user.id) | (Ticket.created_by == current_user.id)
     ).order_by(Ticket.updated_at.desc()).all()
     return render_template('tickets/my_tickets.html', tickets=tickets)
+
+
+# ── Comment Reactions ─────────────────────────────────────────────────────────
+
+ALLOWED_REACTIONS = ['👍', '👎', '❤️', '🎉', '👀', '🚀', '😄', '🤔']
+
+@tickets_bp.route('/projects/<key>/tickets/<ticket_key>/comments/<int:comment_id>/react', methods=['POST'])
+@login_required
+def toggle_reaction(key, ticket_key, comment_id):
+    from app.models import Comment
+    comment = Comment.query.get_or_404(comment_id)
+    data = request.get_json() if request.is_json else request.form
+    emoji = data.get('emoji', '')
+
+    if emoji not in ALLOWED_REACTIONS:
+        return jsonify({'error': 'Invalid emoji'}), 400
+
+    existing = CommentReaction.query.filter_by(
+        comment_id=comment_id, user_id=current_user.id, emoji=emoji
+    ).first()
+
+    if existing:
+        db.session.delete(existing)
+        added = False
+    else:
+        r = CommentReaction(
+            comment_id=comment_id, user_id=current_user.id, emoji=emoji
+        )
+        db.session.add(r)
+        added = True
+
+    db.session.commit()
+
+    rxns = {}
+    for r in CommentReaction.query.filter_by(comment_id=comment_id).all():
+        rxns.setdefault(r.emoji, []).append(r.user.full_name if r.user else '')
+
+    return jsonify({'success': True, 'added': added, 'reactions': rxns})
+
+
+# ── Issue Linking ──────────────────────────────────────────────────────────────
+
+@tickets_bp.route('/projects/<key>/tickets/<ticket_key>/links', methods=['POST'])
+@login_required
+def create_link(key, ticket_key):
+    ticket = Ticket.query.filter_by(ticket_key=ticket_key).first_or_404()
+    data = request.get_json() if request.is_json else request.form
+
+    target_key = data.get('target_ticket_key', '').strip()
+    link_type = data.get('link_type', LinkType.RELATES_TO.value)
+
+    if not target_key:
+        return jsonify({'error': 'Target ticket key required'}), 400
+    if link_type not in [lt.value for lt in LinkType]:
+        return jsonify({'error': 'Invalid link type'}), 400
+
+    target = Ticket.query.filter_by(ticket_key=target_key).first()
+    if not target:
+        return jsonify({'error': f'Ticket {target_key} not found'}), 404
+    if target.id == ticket.id:
+        return jsonify({'error': 'Cannot link a ticket to itself'}), 400
+
+    existing = TicketLink.query.filter_by(
+        source_ticket_id=ticket.id, target_ticket_id=target.id, link_type=link_type
+    ).first()
+    if existing:
+        return jsonify({'error': 'Link already exists'}), 409
+
+    link = TicketLink(
+        source_ticket_id=ticket.id,
+        target_ticket_id=target.id,
+        link_type=link_type,
+        created_by=current_user.id
+    )
+    db.session.add(link)
+    log_activity(ticket=ticket, action='link_added',
+                 new_value=f'{link_type} {target_key}')
+    db.session.commit()
+
+    if request.is_json:
+        return jsonify({
+            'success': True,
+            'link': {
+                'id': link.id,
+                'link_type': link.link_type,
+                'target_key': target.ticket_key,
+                'target_title': target.title,
+                'target_status': target.status,
+                'target_url': url_for('tickets.ticket_detail',
+                                      key=target.project.key,
+                                      ticket_key=target.ticket_key),
+            }
+        })
+    flash('Link created.', 'success')
+    return redirect(url_for('tickets.ticket_detail', key=key, ticket_key=ticket_key))
+
+
+@tickets_bp.route('/projects/<key>/tickets/<ticket_key>/links/<int:link_id>/delete', methods=['POST'])
+@login_required
+def delete_link(key, ticket_key, link_id):
+    link = TicketLink.query.get_or_404(link_id)
+    ticket = Ticket.query.filter_by(ticket_key=ticket_key).first_or_404()
+
+    if link.source_ticket_id != ticket.id and link.target_ticket_id != ticket.id:
+        abort(404)
+
+    db.session.delete(link)
+    log_activity(ticket=ticket, action='link_removed',
+                 new_value=f'{link.link_type}')
+    db.session.commit()
+
+    if request.is_json:
+        return jsonify({'success': True})
+    flash('Link removed.', 'success')
+    return redirect(url_for('tickets.ticket_detail', key=key, ticket_key=ticket_key))
+
+
+# ── Bulk Operations ────────────────────────────────────────────────────────────
+
+@tickets_bp.route('/projects/<key>/tickets/bulk-update', methods=['POST'])
+@login_required
+def bulk_update_tickets(key):
+    project = Project.query.filter_by(key=key).first_or_404()
+    data = request.get_json() if request.is_json else request.form
+
+    ticket_ids = request.form.getlist('ticket_ids') if not request.is_json else data.get('ticket_ids', [])
+    action = data.get('action') if request.is_json else request.form.get('action')
+    value = data.get('value') if request.is_json else request.form.get('value')
+
+    if not ticket_ids:
+        if request.is_json:
+            return jsonify({'error': 'No tickets selected'}), 400
+        flash('No tickets selected.', 'error')
+        return redirect(url_for('projects.project_backlog', key=key))
+
+    tickets = Ticket.query.filter(
+        Ticket.id.in_([int(tid) for tid in ticket_ids]),
+        Ticket.project_id == project.id
+    ).all()
+
+    updated = 0
+    for ticket in tickets:
+        if action == 'status':
+            valid = [s.value for s in TicketStatus]
+            if value in valid:
+                old = ticket.status
+                ticket.status = value
+                if value == TicketStatus.DONE.value:
+                    ticket.resolved_at = datetime.now(timezone.utc)
+                log_activity(ticket=ticket, action='status_changed',
+                             old_value=old, new_value=value)
+                updated += 1
+        elif action == 'priority':
+            if value in [p.value for p in TicketPriority]:
+                old = ticket.priority
+                ticket.priority = value
+                log_activity(ticket=ticket, action='priority_changed',
+                             old_value=old, new_value=value)
+                updated += 1
+        elif action == 'assignee':
+            old = str(ticket.assigned_to)
+            ticket.assigned_to = int(value) if value else None
+            ticket.assigned_by = current_user.id
+            log_activity(ticket=ticket, action='assigned',
+                         old_value=old, new_value=value or 'unassigned')
+            updated += 1
+        elif action == 'sprint':
+            ticket.sprint_id = int(value) if value else None
+            log_activity(ticket=ticket, action='sprint_changed', new_value=str(value))
+            updated += 1
+
+    db.session.commit()
+
+    if request.is_json:
+        return jsonify({'success': True, 'updated': updated})
+    flash(f'{updated} ticket(s) updated.', 'success')
+    return redirect(url_for('projects.project_backlog', key=key))

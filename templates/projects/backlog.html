@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Backlog - {{ project.name }} - SaralTrack{% endblock %}
 {% block content %}
-<div class="space-y-4">
+<div class="space-y-4" x-data="bulkOps()">
     <div class="flex items-center justify-between flex-wrap gap-3">
         <div class="flex items-center gap-3">
             <a href="{{ url_for('projects.project_overview', key=project.key) }}" class="dark:text-gray-400 text-gray-500 hover:text-electric">{{ project.key }}</a>
@@ -9,7 +9,7 @@
             <h1 class="text-xl font-bold">Backlog</h1>
             <span class="text-sm dark:text-gray-400 text-gray-500">({{ tickets|length }} tickets)</span>
         </div>
-        {% if current_user.role in ('admin', 'manager', 'developer') %}
+        {% if current_user.can_develop %}
         <a href="{{ url_for('tickets.create_ticket', key=project.key) }}" class="px-3 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Create Ticket
@@ -17,15 +17,31 @@
         {% endif %}
     </div>
 
+    <!-- Saved Filters Quick-picks -->
+    <div x-data="savedFilters('{{ project.key }}')" x-init="load()">
+        <div x-show="filters.length > 0" class="flex items-center gap-2 flex-wrap mb-1">
+            <span class="text-xs dark:text-gray-500 text-gray-400">Saved:</span>
+            <template x-for="f in filters" :key="f.id">
+                <div class="flex items-center gap-1">
+                    <a :href="buildFilterUrl(f.filter_json)"
+                       class="text-xs px-2 py-1 rounded-lg dark:bg-navy-lighter bg-gray-100 hover:bg-electric/10 hover:text-electric transition-colors"
+                       x-text="f.name + (f.is_shared ? ' 🌐' : '')"></a>
+                    <button x-show="f.is_mine" @click="deleteFilter(f.id)"
+                            class="text-xs text-rose hover:underline opacity-60 hover:opacity-100">✕</button>
+                </div>
+            </template>
+        </div>
+    </div>
+
     <!-- Filters -->
     <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4">
-        <form method="GET" class="flex items-center gap-3 flex-wrap">
+        <form method="GET" id="filter-form" class="flex items-center gap-3 flex-wrap">
             <input type="text" name="search" value="{{ request.args.get('search', '') }}" placeholder="Search tickets..."
                    class="px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm flex-1 min-w-[200px] focus:outline-none focus:ring-2 focus:ring-electric">
             <select name="status" class="text-sm rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 px-3 py-2">
                 <option value="">All Statuses</option>
-                {% for s in ['backlog', 'todo', 'in_progress', 'in_review', 'testing', 'done', 'cancelled'] %}
-                <option value="{{ s }}" {% if request.args.get('status') == s %}selected{% endif %}>{{ s|replace('_', ' ')|capitalize }}</option>
+                {% for val, label in all_statuses %}
+                <option value="{{ val }}" {% if request.args.get('status') == val %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
             <select name="priority" class="text-sm rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 px-3 py-2">
@@ -49,6 +65,86 @@
             <button type="submit" class="px-4 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors">Filter</button>
             <a href="{{ url_for('projects.project_backlog', key=project.key) }}" class="px-4 py-2 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm hover:opacity-80">Clear</a>
         </form>
+
+        <!-- Save filter row -->
+        {% set has_filters = request.args.get('search') or request.args.get('status') or request.args.get('priority') or request.args.get('type') or request.args.get('assignee') %}
+        {% if has_filters %}
+        <div class="mt-3 pt-3 border-t dark:border-navy-border border-gray-200" x-data="{ showSave: false, filterName: '' }">
+            <button @click="showSave = !showSave" class="text-xs text-electric hover:underline">
+                + Save this filter
+            </button>
+            <form x-show="showSave" x-cloak method="POST"
+                  action="{{ url_for('releases.save_filter', key=project.key) }}"
+                  class="flex items-center gap-2 mt-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% for k, v in request.args.items() %}
+                <input type="hidden" name="{{ k }}" value="{{ v }}">
+                {% endfor %}
+                <input type="text" name="name" x-model="filterName" placeholder="Filter name…"
+                       class="px-3 py-1.5 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                <label class="flex items-center gap-1 text-xs">
+                    <input type="checkbox" name="is_shared" class="rounded text-electric"> Share with team
+                </label>
+                <button type="submit" :disabled="!filterName.trim()"
+                        class="px-3 py-1.5 bg-electric text-white rounded-lg text-sm disabled:opacity-40">Save</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Bulk Actions Toolbar (appears when tickets are selected) -->
+    <div x-show="selected.length > 0" x-cloak
+         class="dark:bg-navy-lighter bg-blue-50 border dark:border-navy-border border-blue-200 rounded-xl p-3 flex items-center gap-3 flex-wrap">
+        <span class="text-sm font-medium" x-text="selected.length + ' ticket(s) selected'"></span>
+        <div class="flex items-center gap-2 flex-wrap ml-auto">
+            <select x-model="bulkAction" class="text-sm rounded-lg dark:bg-navy bg-white border dark:border-navy-border border-gray-300 px-3 py-1.5">
+                <option value="">Action…</option>
+                <option value="status">Set Status</option>
+                <option value="priority">Set Priority</option>
+                <option value="assignee">Set Assignee</option>
+                <option value="sprint">Set Sprint</option>
+            </select>
+
+            <template x-if="bulkAction === 'status'">
+                <select x-model="bulkValue" class="text-sm rounded-lg dark:bg-navy bg-white border dark:border-navy-border border-gray-300 px-3 py-1.5">
+                    <option value="">Pick status…</option>
+                    {% for val, label in all_statuses %}
+                    <option value="{{ val }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </template>
+
+            <template x-if="bulkAction === 'priority'">
+                <select x-model="bulkValue" class="text-sm rounded-lg dark:bg-navy bg-white border dark:border-navy-border border-gray-300 px-3 py-1.5">
+                    <option value="">Pick priority…</option>
+                    {% for p in ['critical', 'high', 'medium', 'low'] %}
+                    <option value="{{ p }}">{{ p|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </template>
+
+            <template x-if="bulkAction === 'assignee'">
+                <select x-model="bulkValue" class="text-sm rounded-lg dark:bg-navy bg-white border dark:border-navy-border border-gray-300 px-3 py-1.5">
+                    <option value="">Unassigned</option>
+                    {% for m in members %}
+                    <option value="{{ m.id }}">{{ m.full_name }}</option>
+                    {% endfor %}
+                </select>
+            </template>
+
+            <template x-if="bulkAction === 'sprint'">
+                <select x-model="bulkValue" class="text-sm rounded-lg dark:bg-navy bg-white border dark:border-navy-border border-gray-300 px-3 py-1.5">
+                    <option value="">No Sprint</option>
+                    {% for s in sprints %}
+                    <option value="{{ s.id }}">{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+            </template>
+
+            <button @click="applyBulk()" :disabled="!bulkAction || bulkValue === ''"
+                    class="px-3 py-1.5 bg-electric text-white rounded-lg text-sm disabled:opacity-40">Apply</button>
+            <button @click="selected = []; selectAll = false" class="px-3 py-1.5 dark:bg-navy bg-white border dark:border-navy-border border-gray-200 rounded-lg text-sm">Clear</button>
+        </div>
     </div>
 
     <!-- Ticket List -->
@@ -57,18 +153,25 @@
         <table class="w-full">
             <thead class="dark:bg-navy-lighter bg-gray-50 text-left text-sm">
                 <tr>
+                    <th class="px-4 py-3 w-10">
+                        <input type="checkbox" x-model="selectAll" @change="toggleAll()" class="rounded text-electric">
+                    </th>
                     <th class="px-4 py-3 font-medium w-24">Key</th>
                     <th class="px-4 py-3 font-medium">Title</th>
                     <th class="px-4 py-3 font-medium w-20">Type</th>
                     <th class="px-4 py-3 font-medium w-24">Priority</th>
                     <th class="px-4 py-3 font-medium w-28">Status</th>
                     <th class="px-4 py-3 font-medium w-32">Assignee</th>
-                    <th class="px-4 py-3 font-medium w-24">Points</th>
+                    <th class="px-4 py-3 font-medium w-16">Pts</th>
                 </tr>
             </thead>
             <tbody class="divide-y dark:divide-navy-border divide-gray-200">
                 {% for ticket in tickets %}
-                <tr class="dark:hover:bg-navy-lighter/50 hover:bg-gray-50 transition-colors {% if ticket.deadline_urgency() == 'red' %}bg-rose/5{% endif %}">
+                <tr class="dark:hover:bg-navy-lighter/50 hover:bg-gray-50 transition-colors {% if ticket.deadline_urgency() == 'red' %}bg-rose/5{% endif %}"
+                    :class="{ 'dark:bg-electric/5 bg-blue-50': selected.includes({{ ticket.id }}) }">
+                    <td class="px-4 py-3">
+                        <input type="checkbox" value="{{ ticket.id }}" x-model="selected" class="rounded text-electric">
+                    </td>
                     <td class="px-4 py-3">
                         <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=ticket.ticket_key) }}" 
                            class="font-mono text-xs text-electric hover:underline">{{ ticket.ticket_key }}</a>
@@ -101,10 +204,10 @@
                             <span class="text-sm truncate">{{ ticket.assignee.full_name }}</span>
                         </div>
                         {% else %}
-                        <span class="text-xs dark:text-gray-500 text-gray-400">Unassigned</span>
+                        <span class="text-xs dark:text-gray-500 text-gray-400">–</span>
                         {% endif %}
                     </td>
-                    <td class="px-4 py-3 text-sm dark:text-gray-400 text-gray-500">{{ ticket.story_points or '-' }}</td>
+                    <td class="px-4 py-3 text-sm dark:text-gray-400 text-gray-500">{{ ticket.story_points or '–' }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -117,4 +220,69 @@
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function savedFilters(projectKey) {
+    return {
+        filters: [],
+        load() {
+            fetch(`/api/projects/${projectKey}/filters`)
+                .then(r => r.json()).then(data => { this.filters = data; });
+        },
+        buildFilterUrl(filterJson) {
+            const params = new URLSearchParams(filterJson);
+            return `?${params.toString()}`;
+        },
+        deleteFilter(id) {
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+            fetch(`/projects/${projectKey}/filters/${id}/delete`, {
+                method: 'POST', headers: { 'X-CSRFToken': csrf }
+            }).then(() => this.load());
+        }
+    };
+}
+
+function bulkOps() {
+    return {
+        selected: [],
+        selectAll: false,
+        bulkAction: '',
+        bulkValue: '',
+
+        toggleAll() {
+            if (this.selectAll) {
+                this.selected = [{% for t in tickets %}{{ t.id }},{% endfor %}];
+            } else {
+                this.selected = [];
+            }
+        },
+
+        applyBulk() {
+            if (!this.bulkAction || !this.selected.length) return;
+            if (this.bulkAction !== 'assignee' && !this.bulkValue) return;
+
+            const formData = new FormData();
+            formData.append('action', this.bulkAction);
+            formData.append('value', this.bulkValue);
+            this.selected.forEach(id => formData.append('ticket_ids', id));
+
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+            fetch('/projects/{{ project.key }}/tickets/bulk-update', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+                body: formData
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    showToast(`${data.updated} ticket(s) updated`);
+                    setTimeout(() => location.reload(), 800);
+                } else {
+                    showToast(data.error || 'Failed', 'error');
+                }
+            }).catch(() => showToast('Request failed', 'error'));
+        }
+    };
+}
+</script>
 {% endblock %}

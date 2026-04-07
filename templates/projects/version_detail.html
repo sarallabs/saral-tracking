@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}{{ version.name }} - {{ project.name }} - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex items-center justify-between flex-wrap gap-3">
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('projects.project_overview', key=project.key) }}" class="dark:text-gray-400 text-gray-500 hover:text-electric">{{ project.key }}</a>
+            <span class="dark:text-gray-600 text-gray-300">/</span>
+            <a href="{{ url_for('releases.project_releases', key=project.key) }}" class="dark:text-gray-400 text-gray-500 hover:text-electric">Releases</a>
+            <span class="dark:text-gray-600 text-gray-300">/</span>
+            <h1 class="text-xl font-bold">{{ version.name }}</h1>
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium
+                {% if version.status == 'released' %}bg-emerald/10 text-emerald
+                {% elif version.status == 'archived' %}bg-gray-500/10 dark:text-gray-400 text-gray-500
+                {% else %}bg-electric/10 text-electric{% endif %}">{{ version.status|capitalize }}</span>
+        </div>
+        {% if current_user.can_manage and version.status == 'unreleased' %}
+        <button onclick="updateVersion('status', 'released')"
+                class="px-4 py-2 bg-emerald hover:bg-emerald/80 text-white rounded-lg text-sm font-medium">
+            Mark as Released
+        </button>
+        {% endif %}
+    </div>
+
+    {% if version.description %}
+    <p class="dark:text-gray-400 text-gray-500">{{ version.description }}</p>
+    {% endif %}
+
+    <!-- Progress -->
+    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
+        <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-4">
+                <span class="text-sm font-medium">{{ done }}/{{ total }} tickets complete</span>
+                {% if version.release_date %}
+                <span class="text-sm dark:text-gray-400 text-gray-500">📅 {{ version.release_date.strftime('%b %d, %Y') }}</span>
+                {% endif %}
+                <span class="text-sm dark:text-gray-400 text-gray-500">{{ done_points }}/{{ total_points }} points</span>
+            </div>
+            <span class="text-sm font-bold text-emerald">{{ progress }}%</span>
+        </div>
+        <div class="w-full h-3 dark:bg-navy bg-gray-200 rounded-full overflow-hidden">
+            <div class="h-full bg-emerald rounded-full transition-all" style="width: {{ progress }}%"></div>
+        </div>
+    </div>
+
+    <!-- Tickets by status -->
+    <div class="space-y-4">
+        {% for status, status_tickets in status_groups.items() %}
+        <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 overflow-hidden">
+            <div class="px-4 py-3 dark:bg-navy-lighter/50 bg-gray-50 border-b dark:border-navy-border border-gray-200 flex items-center gap-2">
+                <span class="text-sm font-semibold capitalize">{{ status|replace('_', ' ') }}</span>
+                <span class="text-xs dark:bg-navy bg-gray-200 px-2 py-0.5 rounded-full">{{ status_tickets|length }}</span>
+            </div>
+            <div class="divide-y dark:divide-navy-border divide-gray-100">
+                {% for ticket in status_tickets %}
+                <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=ticket.ticket_key) }}"
+                   class="flex items-center justify-between px-4 py-3 dark:hover:bg-navy-lighter/30 hover:bg-gray-50 transition-colors">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="font-mono text-xs text-electric flex-shrink-0">{{ ticket.ticket_key }}</span>
+                        <span class="text-sm truncate">{{ ticket.title }}</span>
+                        <span class="text-xs px-1.5 py-0.5 rounded flex-shrink-0
+                            {% if ticket.type == 'bug' %}bg-rose/10 text-rose
+                            {% elif ticket.type == 'story' %}bg-emerald/10 text-emerald
+                            {% elif ticket.type == 'epic' %}bg-purple-500/10 text-purple-500
+                            {% else %}bg-electric/10 text-electric{% endif %}">{{ ticket.type }}</span>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0 ml-3">
+                        <span class="text-xs px-2 py-0.5 rounded-full font-medium
+                            {% if ticket.priority == 'critical' %}bg-rose/10 text-rose
+                            {% elif ticket.priority == 'high' %}bg-orange-500/10 text-orange-500
+                            {% elif ticket.priority == 'medium' %}bg-amber/10 text-amber
+                            {% else %}bg-gray-500/10 dark:text-gray-400 text-gray-500{% endif %}">{{ ticket.priority }}</span>
+                        {% if ticket.assignee %}
+                        <div class="w-6 h-6 rounded-full bg-electric flex items-center justify-center text-white text-xs font-bold" title="{{ ticket.assignee.full_name }}">{{ ticket.assignee.get_initials() }}</div>
+                        {% endif %}
+                        {% if ticket.story_points %}
+                        <span class="text-xs dark:text-gray-500 text-gray-400">{{ ticket.story_points }}p</span>
+                        {% endif %}
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not tickets %}
+        <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-12 text-center">
+            <p class="dark:text-gray-500 text-gray-400">No tickets assigned to this version yet.</p>
+            <p class="text-sm dark:text-gray-600 text-gray-400 mt-1">Set the Fix Version field on tickets to include them here.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateVersion(field, value) {
+    fetchWithCSRF(`/projects/{{ project.key }}/releases/{{ version.id }}/edit`, {
+        method: 'POST',
+        body: JSON.stringify({ field, value })
+    }).then(r => r.json()).then(data => {
+        if (data.success) { showToast('Updated'); setTimeout(() => location.reload(), 600); }
+        else showToast(data.error || 'Failed', 'error');
+    });
+}
+</script>
+{% endblock %}

@@ -11,7 +11,7 @@
             <span class="dark:text-gray-600 text-gray-300">/</span>
             <h1 class="text-xl font-bold">Board</h1>
         </div>
-        {% if current_user.role in ('admin', 'manager', 'developer') %}
+        {% if current_user.can_develop %}
         <a href="{{ url_for('tickets.create_ticket', key=project.key) }}" id="quick-create-btn"
            class="px-3 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
@@ -20,14 +20,33 @@
         {% endif %}
     </div>
 
-    <!-- Filters -->
+    <!-- Filters & View Toggle -->
     <div class="flex items-center gap-3 flex-wrap" x-data="{ showFilters: false }">
         <button @click="showFilters = !showFilters" class="px-3 py-1.5 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm flex items-center gap-1">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
             Filter
         </button>
+
+        <!-- View mode -->
+        <div class="flex rounded-lg overflow-hidden border dark:border-navy-border border-gray-200 text-sm">
+            <a href="?{% set args = request.args.to_dict() %}{% set _ = args.update({'groupby': ''}) %}{{ args | urlencode }}"
+               class="px-3 py-1.5 {% if groupby != 'epic' %}bg-electric text-white{% else %}dark:bg-navy-lighter bg-gray-100{% endif %}">Board</a>
+            <a href="?{% set args = request.args.to_dict() %}{% set _ = args.update({'groupby': 'epic'}) %}{{ args | urlencode }}"
+               class="px-3 py-1.5 {% if groupby == 'epic' %}bg-electric text-white{% else %}dark:bg-navy-lighter bg-gray-100{% endif %}">Swimlanes</a>
+        </div>
+
+        <!-- Sort controls -->
+        <div class="flex items-center gap-1 text-sm">
+            <span class="dark:text-gray-500 text-gray-400 text-xs">Sort:</span>
+            {% for s_val, s_label in [('created','Created'),('priority','Priority'),('deadline','Deadline')] %}
+            <a href="?{% set args = request.args.to_dict() %}{% set _ = args.update({'sort': s_val}) %}{{ args | urlencode }}"
+               class="px-2 py-1 rounded-lg {% if sort_by == s_val %}bg-electric text-white{% else %}dark:bg-navy-lighter bg-gray-100{% endif %}">{{ s_label }}</a>
+            {% endfor %}
+        </div>
+
         <div x-show="showFilters" class="flex items-center gap-2 flex-wrap">
             <form method="GET" class="flex items-center gap-2 flex-wrap">
+                <input type="hidden" name="groupby" value="{{ groupby }}">
                 <select name="assignee" onchange="this.form.submit()" class="text-sm rounded-lg dark:bg-navy-lighter bg-gray-100 border-0 px-3 py-1.5">
                     <option value="">All Assignees</option>
                     {% for m in members %}
@@ -46,19 +65,106 @@
                     <option value="{{ t }}" {% if request.args.get('type') == t %}selected{% endif %}>{{ t|capitalize }}</option>
                     {% endfor %}
                 </select>
+                <select name="sprint" onchange="this.form.submit()" class="text-sm rounded-lg dark:bg-navy-lighter bg-gray-100 border-0 px-3 py-1.5">
+                    <option value="">All Sprints</option>
+                    {% for s in sprints %}
+                    <option value="{{ s.id }}" {% if request.args.get('sprint') == s.id|string %}selected{% endif %}>{{ s.name }}</option>
+                    {% endfor %}
+                </select>
             </form>
         </div>
     </div>
 
-    <!-- Kanban Board -->
+    {% if groupby == 'epic' and swimlanes %}
+    <!-- Epic Swimlane View -->
+    <div class="space-y-6" style="min-height: 50vh;">
+        <!-- Column headers -->
+        <div class="flex gap-4 overflow-x-auto">
+            <div class="flex-shrink-0 w-40"></div>
+            {% for status in statuses %}
+            <div class="flex-shrink-0 w-60 text-center">
+                {% if status_meta and status_meta[status] %}
+                <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-white"
+                     style="background-color: {{ status_meta[status].color }}">
+                    {{ status_meta[status].name }}
+                </div>
+                {% else %}
+                <span class="text-xs font-semibold uppercase tracking-wider dark:text-gray-400 text-gray-500">{{ status|replace('_', ' ') }}</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        {% for lane in swimlanes %}
+        <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 overflow-hidden">
+            <!-- Epic row header -->
+            <div class="flex items-center gap-3 px-4 py-3 dark:bg-navy-lighter/50 bg-gray-50 border-b dark:border-navy-border border-gray-200">
+                {% if lane.epic %}
+                <span class="w-2 h-2 rounded-full bg-purple-500 flex-shrink-0"></span>
+                <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=lane.epic.ticket_key) }}"
+                   class="font-mono text-xs text-purple-500 hover:underline">{{ lane.epic.ticket_key }}</a>
+                <span class="text-sm font-medium">{{ lane.epic.title }}</span>
+                {% else %}
+                <span class="text-sm font-medium dark:text-gray-400 text-gray-500">No Epic</span>
+                {% endif %}
+                {% set lane_total = namespace(n=0) %}
+                {% for s in statuses %}{% set lane_total.n = lane_total.n + lane.columns[s]|length %}{% endfor %}
+                <span class="text-xs dark:bg-navy bg-gray-200 px-2 py-0.5 rounded-full ml-auto">{{ lane_total.n }} tickets</span>
+            </div>
+
+            <!-- Status columns for this epic -->
+            <div class="flex gap-0 overflow-x-auto">
+                <div class="flex-shrink-0 w-40 hidden"></div>
+                {% for status in statuses %}
+                <div class="flex-shrink-0 w-60 p-3 border-r dark:border-navy-border border-gray-100 last:border-r-0 min-h-[120px] kanban-column" data-status="{{ status }}"
+                     ondragover="event.preventDefault(); this.classList.add('ring-inset', 'ring-2', 'ring-electric/30')"
+                     ondragleave="this.classList.remove('ring-inset', 'ring-2', 'ring-electric/30')"
+                     ondrop="handleDrop(event, '{{ status }}')">
+                    <div class="space-y-2">
+                        {% for ticket in lane.columns[status] %}
+                        {% include 'tickets/_card.html' ignore missing %}
+                        <div class="dark:bg-navy-lighter bg-gray-50 rounded-lg border dark:border-navy-border border-gray-200 p-2 cursor-move hover:border-electric/50 transition-all"
+                             draggable="true" data-ticket-id="{{ ticket.id }}"
+                             ondragstart="event.dataTransfer.setData('text/plain', '{{ ticket.id }}'); this.classList.add('opacity-50')"
+                             ondragend="this.classList.remove('opacity-50')">
+                            <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=ticket.ticket_key) }}" class="block">
+                                <div class="flex items-center justify-between">
+                                    <span class="font-mono text-xs dark:text-gray-400 text-gray-500">{{ ticket.ticket_key }}</span>
+                                    {% if ticket.assignee %}
+                                    <div class="w-5 h-5 rounded-full bg-electric flex items-center justify-center text-white text-xs font-bold" title="{{ ticket.assignee.full_name }}">{{ ticket.assignee.get_initials() }}</div>
+                                    {% endif %}
+                                </div>
+                                <p class="text-sm mt-1 line-clamp-2">{{ ticket.title }}</p>
+                                {% if ticket.story_points %}<p class="text-xs dark:text-gray-500 text-gray-400 mt-1">{{ ticket.story_points }} pts</p>{% endif %}
+                            </a>
+                        </div>
+                        {% endfor %}
+                        {% if not lane.columns[status] %}
+                        <div class="text-center py-4 text-xs dark:text-gray-600 text-gray-300">–</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% else %}
+    <!-- Standard Kanban Board -->
     <div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 70vh;">
         {% for status in statuses %}
         <div class="flex-shrink-0 w-72">
             <div class="dark:bg-navy-lighter/50 bg-gray-100 rounded-xl p-3">
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-sm font-semibold uppercase tracking-wider dark:text-gray-400 text-gray-500">
-                        {{ status|replace('_', ' ') }}
-                    </h3>
+                    {% if status_meta and status_meta[status] %}
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background: {{ status_meta[status].color }}"></span>
+                        <h3 class="text-sm font-semibold dark:text-gray-200 text-gray-700">{{ status_meta[status].name }}</h3>
+                    </div>
+                    {% else %}
+                    <h3 class="text-sm font-semibold uppercase tracking-wider dark:text-gray-400 text-gray-500">{{ status|replace('_', ' ') }}</h3>
+                    {% endif %}
                     <span class="text-xs dark:bg-navy-border bg-gray-200 px-2 py-0.5 rounded-full">{{ columns[status]|length }}</span>
                 </div>
                 <div class="space-y-2 min-h-[200px] kanban-column" data-status="{{ status }}"
@@ -66,23 +172,34 @@
                      ondragleave="this.classList.remove('ring-2', 'ring-electric/50')"
                      ondrop="handleDrop(event, '{{ status }}')">
                     {% for ticket in columns[status] %}
+                    {% set urgency = ticket.deadline_urgency() %}
+                    {% set is_blocked = ticket.incoming_links.filter_by(link_type='blocks').count() > 0 %}
                     <div class="dark:bg-navy-light bg-white rounded-lg border dark:border-navy-border border-gray-200 p-3 cursor-move hover:border-electric/50 transition-all
-                         {% if ticket.deadline_urgency() == 'red' %}deadline-red border-rose{% endif %}"
+                         {% if urgency == 'red' %}deadline-red border-rose{% endif %}"
                          draggable="true" data-ticket-id="{{ ticket.id }}"
                          ondragstart="event.dataTransfer.setData('text/plain', '{{ ticket.id }}'); this.classList.add('opacity-50')"
                          ondragend="this.classList.remove('opacity-50')">
                         <a href="{{ url_for('tickets.ticket_detail', key=project.key, ticket_key=ticket.ticket_key) }}" class="block">
-                            <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center justify-between mb-1.5">
                                 <span class="font-mono text-xs dark:text-gray-400 text-gray-500">{{ ticket.ticket_key }}</span>
-                                {% set urgency = ticket.deadline_urgency() %}
-                                {% if urgency %}
-                                <span class="w-2 h-2 rounded-full {% if urgency == 'green' %}bg-emerald{% elif urgency == 'yellow' %}bg-amber{% elif urgency == 'orange' %}bg-orange-500{% else %}bg-rose{% endif %}"></span>
-                                {% endif %}
+                                <div class="flex items-center gap-1">
+                                    {% if is_blocked %}
+                                    <span class="text-xs px-1 py-0.5 rounded bg-rose/10 text-rose font-semibold" title="Blocked">⛔</span>
+                                    {% endif %}
+                                    {% if urgency == 'red' %}
+                                    <span class="text-xs px-1 py-0.5 rounded bg-rose text-white font-semibold">OVERDUE</span>
+                                    {% elif urgency == 'orange' %}
+                                    <span class="w-2 h-2 rounded-full bg-orange-500"></span>
+                                    {% elif urgency == 'yellow' %}
+                                    <span class="w-2 h-2 rounded-full bg-amber"></span>
+                                    {% elif urgency == 'green' %}
+                                    <span class="w-2 h-2 rounded-full bg-emerald"></span>
+                                    {% endif %}
+                                </div>
                             </div>
                             <p class="text-sm font-medium mb-2 line-clamp-2">{{ ticket.title }}</p>
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-1.5">
-                                    <!-- Type icon -->
                                     <span class="text-xs px-1.5 py-0.5 rounded 
                                         {% if ticket.type == 'bug' %}bg-rose/10 text-rose
                                         {% elif ticket.type == 'story' %}bg-emerald/10 text-emerald
@@ -90,7 +207,7 @@
                                         {% else %}bg-electric/10 text-electric{% endif %}">
                                         {{ ticket.type }}
                                     </span>
-                                    <span class="text-xs px-1.5 py-0.5 rounded
+                                    <span class="text-xs px-1.5 py-0.5 rounded font-semibold
                                         {% if ticket.priority == 'critical' %}bg-rose/10 text-rose
                                         {% elif ticket.priority == 'high' %}bg-orange-500/10 text-orange-500
                                         {% elif ticket.priority == 'medium' %}bg-amber/10 text-amber
@@ -98,14 +215,21 @@
                                         {{ ticket.priority[0]|upper }}
                                     </span>
                                 </div>
-                                {% if ticket.assignee %}
-                                <div class="w-6 h-6 rounded-full bg-electric flex items-center justify-center text-white text-xs font-bold" title="{{ ticket.assignee.full_name }}">
-                                    {{ ticket.assignee.get_initials() }}
+                                <div class="flex items-center gap-1">
+                                    {% if ticket.story_points %}
+                                    <span class="text-xs dark:bg-navy bg-gray-100 px-1.5 py-0.5 rounded dark:text-gray-400 text-gray-500">{{ ticket.story_points }}p</span>
+                                    {% endif %}
+                                    {% if ticket.assignee %}
+                                    <div class="w-6 h-6 rounded-full bg-electric flex items-center justify-center text-white text-xs font-bold" title="{{ ticket.assignee.full_name }}">
+                                        {{ ticket.assignee.get_initials() }}
+                                    </div>
+                                    {% endif %}
                                 </div>
-                                {% endif %}
                             </div>
-                            {% if ticket.story_points %}
-                            <div class="mt-2 text-xs dark:text-gray-500 text-gray-400">{{ ticket.story_points }} pts</div>
+                            {% if ticket.hard_deadline and urgency == 'red' %}
+                            <p class="text-xs text-rose mt-1.5 font-medium">Due {{ ticket.hard_deadline.strftime('%b %d') }}</p>
+                            {% elif ticket.soft_deadline and urgency in ('yellow','orange') %}
+                            <p class="text-xs text-amber mt-1.5">Due {{ ticket.soft_deadline.strftime('%b %d') }}</p>
                             {% endif %}
                         </a>
                     </div>
@@ -115,6 +239,7 @@
         </div>
         {% endfor %}
     </div>
+    {% endif %}
 </div>
 {% endblock %}
 

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Create User – SaralTrack{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto">
+  <div class="flex items-center gap-2 text-sm dark:text-gray-400 text-gray-500 mb-1">
+    <a href="{{ url_for('auth.users') }}" class="hover:text-electric">Manage Users</a>
+    <span>/</span><span>Create User</span>
+  </div>
+  <h1 class="text-2xl font-bold dark:text-white text-gray-900 mb-6">Create New User Account</h1>
+
+  <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-6">
+    <form method="POST" class="space-y-5">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium dark:text-gray-300 text-gray-700 mb-1.5">
+            Full Name <span class="text-rose">*</span>
+          </label>
+          <input type="text" name="full_name" required
+                 value="{{ form.get('full_name', '') }}"
+                 placeholder="Jane Smith"
+                 class="w-full px-3 py-2.5 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 focus:outline-none focus:ring-2 focus:ring-electric text-sm">
+        </div>
+        <div>
+          <label class="block text-sm font-medium dark:text-gray-300 text-gray-700 mb-1.5">
+            Username <span class="text-rose">*</span>
+          </label>
+          <input type="text" name="username" required minlength="3"
+                 value="{{ form.get('username', '') }}"
+                 placeholder="janesmith"
+                 class="w-full px-3 py-2.5 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 focus:outline-none focus:ring-2 focus:ring-electric text-sm">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium dark:text-gray-300 text-gray-700 mb-1.5">
+          Email Address <span class="text-rose">*</span>
+        </label>
+        <input type="email" name="email" required
+               value="{{ form.get('email', '') }}"
+               placeholder="jane@example.com"
+               class="w-full px-3 py-2.5 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 focus:outline-none focus:ring-2 focus:ring-electric text-sm">
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium dark:text-gray-300 text-gray-700 mb-1.5">Role</label>
+        <select name="role"
+                class="w-full px-3 py-2.5 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 focus:outline-none focus:ring-2 focus:ring-electric text-sm">
+          {% for r in assignable_roles %}
+          <option value="{{ r }}" {% if form.get('role', 'developer') == r %}selected{% endif %}>
+            {{ r|capitalize }}
+          </option>
+          {% endfor %}
+        </select>
+        <p class="text-xs dark:text-gray-500 text-gray-400 mt-1">
+          Admin — full access &nbsp;·&nbsp; Manager — projects &amp; sprints &nbsp;·&nbsp;
+          Developer — tickets &nbsp;·&nbsp; Viewer — read only
+        </p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium dark:text-gray-300 text-gray-700 mb-1.5">
+          Temporary Password <span class="text-rose">*</span>
+        </label>
+        <div class="relative" x-data="{ show: false }">
+          <input :type="show ? 'text' : 'password'" name="temp_password" required minlength="6"
+                 placeholder="Minimum 6 characters"
+                 class="w-full px-3 py-2.5 pr-10 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 focus:outline-none focus:ring-2 focus:ring-electric text-sm">
+          <button type="button" @click="show = !show"
+                  class="absolute right-3 top-2.5 dark:text-gray-400 text-gray-500 hover:text-electric">
+            <svg x-show="!show" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+            <svg x-show="show" x-cloak class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>
+            </svg>
+          </button>
+        </div>
+        <p class="text-xs dark:text-gray-500 text-gray-400 mt-1">
+          The user will be required to change this on their first login.
+        </p>
+      </div>
+
+      <!-- Info box -->
+      <div class="dark:bg-blue-500/10 bg-blue-50 border dark:border-blue-500/20 border-blue-200 rounded-lg p-3 text-sm dark:text-blue-300 text-blue-700 flex items-start gap-2">
+        <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Share the username and temporary password securely with the new user. They cannot be retrieved after this page is closed.
+      </div>
+
+      <div class="flex gap-3 pt-1">
+        <button type="submit"
+                class="flex-1 py-2.5 bg-electric hover:bg-electric-dark text-white rounded-lg font-semibold transition-colors text-sm">
+          Create Account
+        </button>
+        <a href="{{ url_for('auth.users') }}"
+           class="px-5 py-2.5 dark:bg-navy-lighter bg-gray-100 rounded-lg text-sm hover:opacity-80">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

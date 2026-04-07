@@ -8,7 +8,7 @@
         <h1 class="text-xl font-bold">Members</h1>
     </div>
 
-    {% if current_user.role in ('admin', 'manager') %}
+    {% if current_user.can_manage %}
     <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
         <h3 class="font-semibold mb-3">Add Member</h3>
         <form method="POST" class="flex items-end gap-3">
@@ -57,7 +57,7 @@
                     </td>
                     <td class="px-4 py-3 text-sm capitalize">{{ role_in_project }}</td>
                     <td class="px-4 py-3">
-                        {% if current_user.role in ('admin', 'manager') and user.id != current_user.id %}
+                        {% if current_user.can_manage and user.id != current_user.id %}
                         <form method="POST" action="{{ url_for('projects.remove_member', key=project.key, user_id=user.id) }}" class="inline">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="text-sm text-rose hover:underline" onclick="return confirm('Remove this member?')">Remove</button>

@@ -13,12 +13,12 @@
                 {% else %}bg-electric/10 text-electric{% endif %}">{{ sprint.status }}</span>
         </div>
         <div class="flex items-center gap-2">
-            {% if sprint.status == 'planning' and current_user.role in ('admin', 'manager') %}
+            {% if sprint.status == 'planning' and current_user.can_manage %}
             <form method="POST" action="{{ url_for('sprints.start_sprint', key=project.key, sprint_id=sprint.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="px-4 py-2 bg-emerald hover:bg-emerald/80 text-white rounded-lg text-sm font-medium">Start Sprint</button>
             </form>
-            {% elif sprint.status == 'active' and current_user.role in ('admin', 'manager') %}
+            {% elif sprint.status == 'active' and current_user.can_manage %}
             <form method="POST" action="{{ url_for('sprints.complete_sprint', key=project.key, sprint_id=sprint.id) }}" x-data>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <select name="incomplete_action" class="text-sm rounded-lg dark:bg-navy-lighter bg-gray-100 border-0 px-3 py-2">
@@ -35,21 +35,68 @@
     <p class="dark:text-gray-400 text-gray-500 text-sm">{{ sprint.goal }}</p>
     {% endif %}
 
-    <!-- Progress -->
-    <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4">
-        <div class="flex items-center justify-between mb-2">
-            <span class="text-sm font-medium">Progress: {{ done }}/{{ total }} tickets</span>
-            <span class="text-sm font-bold">{{ progress }}%</span>
+    <!-- Progress + Charts -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Progress bar -->
+        <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-sm font-medium">Progress: {{ done }}/{{ total }} tickets</span>
+                <span class="text-sm font-bold text-emerald">{{ progress }}%</span>
+            </div>
+            <div class="w-full h-3 dark:bg-navy bg-gray-200 rounded-full overflow-hidden">
+                <div class="h-full bg-emerald rounded-full transition-all" style="width: {{ progress }}%"></div>
+            </div>
+            {% if sprint.start_date and sprint.end_date %}
+            <div class="flex justify-between mt-2 text-xs dark:text-gray-500 text-gray-400">
+                <span>{{ sprint.start_date.strftime('%b %d') }}</span>
+                <span>{{ sprint.end_date.strftime('%b %d') }}</span>
+            </div>
+            {% endif %}
+
+            <!-- Story points summary -->
+            <div class="mt-4 grid grid-cols-3 gap-3 text-center">
+                <div class="dark:bg-navy rounded-lg p-2">
+                    <p class="text-lg font-bold text-electric" id="stat-total-pts">–</p>
+                    <p class="text-xs dark:text-gray-500 text-gray-400">Total pts</p>
+                </div>
+                <div class="dark:bg-navy rounded-lg p-2">
+                    <p class="text-lg font-bold text-emerald" id="stat-done-pts">–</p>
+                    <p class="text-xs dark:text-gray-500 text-gray-400">Done pts</p>
+                </div>
+                <div class="dark:bg-navy rounded-lg p-2">
+                    <p class="text-lg font-bold text-amber" id="stat-remaining-pts">–</p>
+                    <p class="text-xs dark:text-gray-500 text-gray-400">Remaining</p>
+                </div>
+            </div>
         </div>
-        <div class="w-full h-3 dark:bg-navy bg-gray-200 rounded-full overflow-hidden">
-            <div class="h-full bg-emerald rounded-full transition-all" style="width: {{ progress }}%"></div>
-        </div>
+
+        <!-- Burndown chart -->
         {% if sprint.start_date and sprint.end_date %}
-        <div class="flex justify-between mt-2 text-xs dark:text-gray-500 text-gray-400">
-            <span>{{ sprint.start_date.strftime('%b %d') }}</span>
-            <span>{{ sprint.end_date.strftime('%b %d') }}</span>
+        <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-semibold">Burndown Chart</h3>
+                <div class="flex gap-1" x-data="{ mode: 'points' }">
+                    <button @click="mode='points'; switchBurndown('points')"
+                            :class="mode==='points' ? 'bg-electric text-white' : 'dark:bg-navy-lighter bg-gray-100'"
+                            class="text-xs px-2 py-1 rounded-lg">Points</button>
+                    <button @click="mode='tickets'; switchBurndown('tickets')"
+                            :class="mode==='tickets' ? 'bg-electric text-white' : 'dark:bg-navy-lighter bg-gray-100'"
+                            class="text-xs px-2 py-1 rounded-lg">Tickets</button>
+                </div>
+            </div>
+            <div style="height: 180px; position: relative;">
+                <canvas id="burndownChart"></canvas>
+            </div>
         </div>
         {% endif %}
+    </div>
+
+    <!-- Velocity chart (if completed sprints exist) -->
+    <div id="velocity-section" class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4 hidden">
+        <h3 class="text-sm font-semibold mb-3">Velocity (Completed Sprints)</h3>
+        <div style="height: 160px; position: relative;">
+            <canvas id="velocityChart"></canvas>
+        </div>
     </div>
 
     <!-- Sprint Board -->
@@ -106,6 +153,9 @@
 
 {% block extra_js %}
 <script>
+let burndownChart = null;
+let burndownData = null;
+
 function addToSprint(ticketId) {
     fetchWithCSRF(`/projects/{{ project.key }}/sprints/{{ sprint.id }}/add-ticket`, {
         method: 'POST',
@@ -117,5 +167,112 @@ function addToSprint(ticketId) {
         }
     });
 }
+
+function switchBurndown(mode) {
+    if (!burndownChart || !burndownData) return;
+    burndownChart.data.datasets[0].data = mode === 'points' ? burndownData.ideal_points : burndownData.ideal_count;
+    burndownChart.data.datasets[1].data = mode === 'points' ? burndownData.actual_points : burndownData.actual_count;
+    burndownChart.data.datasets[0].label = mode === 'points' ? 'Ideal (pts)' : 'Ideal (tickets)';
+    burndownChart.data.datasets[1].label = mode === 'points' ? 'Actual (pts)' : 'Actual (tickets)';
+    burndownChart.update();
+}
+
+{% if sprint.start_date and sprint.end_date %}
+fetch('/api/projects/{{ project.key }}/sprints/{{ sprint.id }}/burndown')
+    .then(r => r.json())
+    .then(data => {
+        if (data.error) return;
+        burndownData = data;
+
+        document.getElementById('stat-total-pts').textContent = data.total_points;
+        document.getElementById('stat-done-pts').textContent = data.done_points;
+        document.getElementById('stat-remaining-pts').textContent = data.total_points - data.done_points;
+
+        const isDark = document.documentElement.classList.contains('dark');
+        const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+        const textColor = isDark ? '#9CA3AF' : '#6B7280';
+
+        const ctx = document.getElementById('burndownChart');
+        if (!ctx) return;
+        burndownChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.labels,
+                datasets: [
+                    {
+                        label: 'Ideal (pts)',
+                        data: data.ideal_points,
+                        borderColor: '#6B7280',
+                        borderDash: [5, 5],
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false,
+                    },
+                    {
+                        label: 'Actual (pts)',
+                        data: data.actual_points,
+                        borderColor: '#2D8CFF',
+                        backgroundColor: 'rgba(45,140,255,0.1)',
+                        borderWidth: 2,
+                        pointRadius: 3,
+                        fill: true,
+                        spanGaps: false,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: textColor, font: { size: 11 } } } },
+                scales: {
+                    x: { ticks: { color: textColor, maxTicksLimit: 7, font: { size: 10 } }, grid: { color: gridColor } },
+                    y: { beginAtZero: true, ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } }
+                }
+            }
+        });
+    });
+{% endif %}
+
+fetch('/api/projects/{{ project.key }}/velocity')
+    .then(r => r.json())
+    .then(data => {
+        if (!data || data.length < 2) return;
+        const section = document.getElementById('velocity-section');
+        if (section) section.classList.remove('hidden');
+
+        const isDark = document.documentElement.classList.contains('dark');
+        const textColor = isDark ? '#9CA3AF' : '#6B7280';
+        const gridColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+
+        new Chart(document.getElementById('velocityChart'), {
+            type: 'bar',
+            data: {
+                labels: data.map(s => s.name),
+                datasets: [
+                    {
+                        label: 'Completed pts',
+                        data: data.map(s => s.completed_points),
+                        backgroundColor: '#10B981',
+                        borderRadius: 4,
+                    },
+                    {
+                        label: 'Committed pts',
+                        data: data.map(s => s.total_points),
+                        backgroundColor: 'rgba(45,140,255,0.3)',
+                        borderRadius: 4,
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: textColor, font: { size: 11 } } } },
+                scales: {
+                    x: { ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } },
+                    y: { beginAtZero: true, ticks: { color: textColor, font: { size: 10 } }, grid: { color: gridColor } }
+                }
+            }
+        });
+    });
 </script>
 {% endblock %}

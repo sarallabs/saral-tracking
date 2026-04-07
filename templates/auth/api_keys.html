@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}API Keys – SaralTrack{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+  <div class="flex items-center gap-2 text-sm dark:text-gray-400 text-gray-500 mb-1">
+    <a href="{{ url_for('auth.profile') }}" class="hover:text-electric">Profile</a>
+    <span>/</span><span>API Keys</span>
+  </div>
+  <h1 class="text-2xl font-bold dark:text-white text-gray-900 mb-2">API Keys</h1>
+  <p class="text-sm dark:text-gray-400 text-gray-500 mb-6">
+    API keys allow external tools to access SaralTrack on your behalf via the REST API
+    (<code class="text-xs dark:bg-navy-lighter bg-gray-100 px-1.5 py-0.5 rounded font-mono">/api/v1/</code>).
+    Use a <code class="text-xs dark:bg-navy-lighter bg-gray-100 px-1.5 py-0.5 rounded font-mono">Bearer &lt;key&gt;</code> header.
+  </p>
+
+  <!-- Existing keys -->
+  {% if keys %}
+  <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 overflow-hidden mb-6">
+    <div class="px-5 py-3 border-b dark:border-navy-border border-gray-200 dark:bg-navy-lighter bg-gray-50">
+      <span class="text-sm font-semibold dark:text-gray-300 text-gray-600">Your Keys ({{ keys|length }})</span>
+    </div>
+    <div class="divide-y dark:divide-navy-border divide-gray-100">
+      {% for key in keys %}
+      <div class="px-5 py-4 flex items-center justify-between gap-4">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <p class="font-medium dark:text-white text-gray-900">{{ key.name }}</p>
+            {% if not key.is_active %}
+            <span class="text-xs px-2 py-0.5 rounded-full dark:bg-rose/20 bg-red-50 text-rose">Revoked</span>
+            {% else %}
+            <span class="text-xs px-2 py-0.5 rounded-full dark:bg-emerald/20 bg-green-50 text-emerald-600 dark:text-emerald">Active</span>
+            {% endif %}
+          </div>
+          <div class="flex items-center gap-4 mt-1 text-xs dark:text-gray-400 text-gray-500">
+            <span class="font-mono dark:bg-navy-lighter bg-gray-100 px-2 py-0.5 rounded">{{ key.prefix }}••••••••</span>
+            <span>Scopes: <strong>{{ key.scopes }}</strong></span>
+            <span>Created {{ key.created_at.strftime('%b %d, %Y') }}</span>
+            {% if key.last_used_at %}
+            <span>Last used {{ key.last_used_at.strftime('%b %d, %Y') }}</span>
+            {% else %}
+            <span>Never used</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          {% if key.is_active %}
+          <form method="POST" action="{{ url_for('auth.revoke_api_key', key_id=key.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="px-3 py-1.5 text-xs rounded-lg dark:bg-amber/20 bg-amber-50 text-amber-600 dark:text-amber hover:opacity-80">
+              Revoke
+            </button>
+          </form>
+          {% endif %}
+          <form method="POST" action="{{ url_for('auth.delete_api_key', key_id=key.id) }}"
+                onsubmit="return confirm('Permanently delete this key?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="px-3 py-1.5 text-xs rounded-lg dark:bg-rose/20 bg-red-50 text-rose hover:opacity-80">
+              Delete
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Create new key -->
+  <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
+    <h2 class="font-semibold dark:text-white text-gray-900 mb-4">Create New API Key</h2>
+    <form method="POST" action="{{ url_for('auth.api_keys') }}" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div>
+        <label class="block text-sm font-medium dark:text-gray-300 text-gray-700 mb-1">Key Name *</label>
+        <input type="text" name="name" required placeholder="e.g. CI Pipeline, Local Dev"
+               class="w-full px-3 py-2 rounded-lg dark:bg-navy-lighter bg-gray-50 border dark:border-navy-border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-electric">
+      </div>
+      <div>
+        <label class="block text-sm font-medium dark:text-gray-300 text-gray-700 mb-2">Scopes</label>
+        <div class="flex flex-wrap gap-3">
+          {% for scope, desc in [('read', 'Read all resources'), ('write', 'Create & update resources')] %}
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" name="scope_{{ scope }}" value="{{ scope }}"
+                   {% if scope == 'read' %}checked{% endif %}
+                   class="rounded border-gray-300 text-electric focus:ring-electric">
+            <span class="text-sm dark:text-gray-300 text-gray-600">
+              <strong>{{ scope }}</strong> — {{ desc }}
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        <input type="hidden" name="scopes" id="scopes-hidden" value="read">
+      </div>
+      <div class="pt-1">
+        <button type="submit" onclick="buildScopes(event)"
+                class="px-5 py-2 bg-electric text-white rounded-lg text-sm font-medium hover:bg-electric-dark">
+          Generate Key
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- API reference -->
+  <div class="mt-6 dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
+    <h2 class="font-semibold dark:text-white text-gray-900 mb-3">Quick Reference</h2>
+    <div class="space-y-2 text-sm dark:text-gray-300 text-gray-600">
+      <p class="font-mono dark:bg-navy-lighter bg-gray-50 px-3 py-2 rounded-lg text-xs overflow-x-auto whitespace-nowrap">
+        curl -H "Authorization: Bearer &lt;YOUR_KEY&gt;" {{ request.host_url }}api/v1/me
+      </p>
+      <table class="w-full text-xs mt-3">
+        <thead><tr class="border-b dark:border-navy-border border-gray-200">
+          <th class="text-left py-1.5 font-semibold dark:text-gray-400 text-gray-500">Endpoint</th>
+          <th class="text-left py-1.5 font-semibold dark:text-gray-400 text-gray-500">Method</th>
+          <th class="text-left py-1.5 font-semibold dark:text-gray-400 text-gray-500">Description</th>
+        </tr></thead>
+        <tbody class="divide-y dark:divide-navy-border divide-gray-100">
+          {% for method, path, desc in [
+            ('GET', '/api/v1/me', 'Current user info'),
+            ('GET', '/api/v1/projects', 'List projects'),
+            ('GET', '/api/v1/projects/{key}/tickets', 'List tickets (filter by status, priority, etc.)'),
+            ('POST', '/api/v1/projects/{key}/tickets', 'Create ticket'),
+            ('PATCH', '/api/v1/projects/{key}/tickets/{key}', 'Update ticket'),
+            ('DELETE', '/api/v1/projects/{key}/tickets/{key}', 'Delete ticket (admin/manager)'),
+            ('GET', '/api/v1/projects/{key}/sprints', 'List sprints'),
+            ('GET', '/api/v1/projects/{key}/components', 'List components'),
+            ('GET', '/api/v1/projects/{key}/members', 'List members'),
+            ('GET', '/api/v1/projects/{key}/versions', 'List versions'),
+            ('GET', '/api/v1/keys', 'List your API keys'),
+          ] %}
+          <tr>
+            <td class="py-2 font-mono">{{ path }}</td>
+            <td class="py-2">
+              <span class="px-1.5 py-0.5 rounded text-xs font-semibold
+                {% if method == 'GET' %}dark:bg-blue-500/20 bg-blue-50 text-blue-600 dark:text-blue-400
+                {% elif method == 'POST' %}dark:bg-emerald/20 bg-green-50 text-emerald-600 dark:text-emerald
+                {% elif method == 'PATCH' %}dark:bg-amber/20 bg-amber-50 text-amber-600 dark:text-amber
+                {% elif method == 'DELETE' %}dark:bg-rose/20 bg-red-50 text-rose{% endif %}">
+                {{ method }}
+              </span>
+            </td>
+            <td class="py-2 dark:text-gray-400 text-gray-500">{{ desc }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+function buildScopes(e) {
+    const form = e.target.closest('form');
+    const scopes = [];
+    form.querySelectorAll('input[name^="scope_"]:checked').forEach(cb => scopes.push(cb.value));
+    if (!scopes.length) scopes.push('read');
+    form.querySelector('#scopes-hidden').value = scopes.join(',');
+}
+</script>
+{% endblock %}

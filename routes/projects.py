@@ -2,8 +2,11 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request,
 from flask_login import login_required, current_user
 from app import db
 from app.models import (Project, ProjectStatus, Ticket, TicketStatus, Sprint, SprintStatus,
-                         Label, User, UserRole, ActivityLog, project_members)
-from app.routes import require_role, log_activity
+                         Label, User, UserRole, ActivityLog, project_members,
+                         WorkflowStatus, DEFAULT_WORKFLOW_STATUSES,
+                         ProjectPermission, DEFAULT_PERMISSIONS, ALL_PERMISSIONS)
+from app.routes import require_role, log_activity, log_audit
+from datetime import datetime, timezone
 
 projects_bp = Blueprint('projects', __name__)
 
@@ -11,7 +14,7 @@ projects_bp = Blueprint('projects', __name__)
 @projects_bp.route('/projects')
 @login_required
 def list_projects():
-    if current_user.role == UserRole.ADMIN.value:
+    if current_user.role in (UserRole.SUPERADMIN.value, UserRole.ADMIN.value):
         projects = Project.query.order_by(Project.created_at.desc()).all()
     else:
         projects = current_user.projects
@@ -109,14 +112,26 @@ def edit_project(key):
 @login_required
 def project_board(key):
     project = Project.query.filter_by(key=key).first_or_404()
-    statuses = [s.value for s in TicketStatus if s != TicketStatus.CANCELLED]
-    columns = {}
-    for s in statuses:
-        q = project.tickets.filter_by(status=s)
-        assignee = request.args.get('assignee')
-        priority = request.args.get('priority')
-        ticket_type = request.args.get('type')
-        sprint_id = request.args.get('sprint')
+
+    custom_wf = project.get_workflow_statuses()
+    if custom_wf:
+        statuses = [s.value for s in custom_wf if not s.is_cancelled]
+        status_meta = {s.value: {'name': s.name, 'color': s.color} for s in custom_wf}
+    else:
+        statuses = [s.value for s in TicketStatus if s != TicketStatus.CANCELLED]
+        status_meta = {}
+
+    assignee = request.args.get('assignee')
+    priority = request.args.get('priority')
+    ticket_type = request.args.get('type')
+    sprint_id = request.args.get('sprint')
+    groupby = request.args.get('groupby', '')
+    sort_by = request.args.get('sort', 'created')  # priority | deadline | created
+
+    _priority_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
+
+    def base_query(status):
+        q = project.tickets.filter_by(status=status)
         if assignee:
             q = q.filter_by(assigned_to=int(assignee))
         if priority:
@@ -125,13 +140,58 @@ def project_board(key):
             q = q.filter_by(type=ticket_type)
         if sprint_id:
             q = q.filter_by(sprint_id=int(sprint_id))
-        columns[s] = q.all()
+        return q
+
+    def sorted_tickets(tickets):
+        if sort_by == 'priority':
+            return sorted(tickets, key=lambda t: _priority_order.get(t.priority, 99))
+        elif sort_by == 'deadline':
+            def _dl_key(t):
+                d = t.hard_deadline or t.soft_deadline
+                if d and not d.tzinfo:
+                    from datetime import timezone as tz
+                    d = d.replace(tzinfo=tz.utc)
+                return d or datetime.max.replace(tzinfo=timezone.utc)
+            return sorted(tickets, key=_dl_key)
+        return tickets  # default: created order (already ordered by query)
+
+    columns = {s: sorted_tickets(base_query(s).all()) for s in statuses}
+
+    swimlanes = None
+    if groupby == 'epic':
+        epics = project.tickets.filter_by(type='epic').all()
+        swimlanes = []
+        for epic in epics:
+            epic_cols = {}
+            for s in statuses:
+                q = project.tickets.filter_by(status=s, parent_ticket_id=epic.id)
+                if assignee:
+                    q = q.filter_by(assigned_to=int(assignee))
+                if priority:
+                    q = q.filter_by(priority=priority)
+                epic_cols[s] = q.all()
+            swimlanes.append({'epic': epic, 'columns': epic_cols})
+
+        no_epic_cols = {}
+        for s in statuses:
+            q = project.tickets.filter(
+                Ticket.status == s,
+                Ticket.parent_ticket_id == None,
+                Ticket.type != 'epic'
+            )
+            if assignee:
+                q = q.filter_by(assigned_to=int(assignee))
+            if priority:
+                q = q.filter_by(priority=priority)
+            no_epic_cols[s] = q.all()
+        swimlanes.append({'epic': None, 'columns': no_epic_cols})
 
     members = project.members.all()
     sprints = project.sprints.all()
     return render_template('projects/board.html',
-        project=project, columns=columns, statuses=statuses,
-        members=members, sprints=sprints)
+        project=project, columns=columns, statuses=statuses, status_meta=status_meta,
+        members=members, sprints=sprints, groupby=groupby, swimlanes=swimlanes,
+        sort_by=sort_by)
 
 
 @projects_bp.route('/projects/<key>/backlog')
@@ -159,8 +219,17 @@ def project_backlog(key):
 
     tickets = q.order_by(Ticket.created_at.desc()).all()
     members = project.members.all()
+    sprints = project.sprints.filter(Sprint.status != SprintStatus.COMPLETED.value).all()
+
+    custom_wf = project.get_workflow_statuses()
+    if custom_wf:
+        all_statuses = [(s.value, s.name) for s in custom_wf]
+    else:
+        all_statuses = [(s.value, s.value.replace('_', ' ').capitalize()) for s in TicketStatus]
+
     return render_template('projects/backlog.html',
-        project=project, tickets=tickets, members=members)
+        project=project, tickets=tickets, members=members, sprints=sprints,
+        all_statuses=all_statuses)
 
 
 @projects_bp.route('/projects/<key>/roadmap')
@@ -262,12 +331,157 @@ def project_settings(key):
             db.session.commit()
             flash('Project archived.', 'success')
             return redirect(url_for('projects.list_projects'))
-        elif action == 'delete' and current_user.role == UserRole.ADMIN.value:
+        elif action == 'delete' and current_user.role in (UserRole.SUPERADMIN.value, UserRole.ADMIN.value):
             db.session.delete(project)
             db.session.commit()
             flash('Project deleted.', 'success')
             return redirect(url_for('projects.list_projects'))
     return render_template('projects/settings.html', project=project)
+
+
+@projects_bp.route('/projects/<key>/workflow', methods=['GET', 'POST'])
+@login_required
+@require_role('admin', 'manager')
+def project_workflow(key):
+    project = Project.query.filter_by(key=key).first_or_404()
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'add':
+            name = request.form.get('name', '').strip()
+            value = request.form.get('value', '').strip().lower().replace(' ', '_')
+            color = request.form.get('color', '#6B7280')
+            is_done = bool(request.form.get('is_done'))
+            is_cancelled = bool(request.form.get('is_cancelled'))
+
+            if not name or not value:
+                flash('Name and value are required.', 'error')
+                return redirect(url_for('projects.project_workflow', key=key))
+
+            existing = WorkflowStatus.query.filter_by(
+                project_id=project.id, value=value
+            ).first()
+            if existing:
+                flash('A status with that value already exists.', 'error')
+                return redirect(url_for('projects.project_workflow', key=key))
+
+            max_order = db.session.query(
+                db.func.max(WorkflowStatus.order)
+            ).filter_by(project_id=project.id).scalar() or -1
+
+            ws = WorkflowStatus(
+                project_id=project.id, name=name, value=value,
+                color=color, order=max_order + 1,
+                is_done=is_done, is_cancelled=is_cancelled
+            )
+            db.session.add(ws)
+            db.session.commit()
+            flash(f'Status "{name}" added.', 'success')
+
+        elif action == 'init_defaults':
+            existing_count = WorkflowStatus.query.filter_by(project_id=project.id).count()
+            if existing_count == 0:
+                for i, s in enumerate(DEFAULT_WORKFLOW_STATUSES):
+                    ws = WorkflowStatus(
+                        project_id=project.id, name=s['name'], value=s['value'],
+                        color=s['color'], order=i,
+                        is_done=s['is_done'], is_cancelled=s['is_cancelled']
+                    )
+                    db.session.add(ws)
+                db.session.commit()
+                flash('Initialized with default workflow statuses.', 'success')
+            else:
+                flash('Workflow already has custom statuses.', 'info')
+
+        elif action == 'reset':
+            WorkflowStatus.query.filter_by(project_id=project.id).delete()
+            db.session.commit()
+            flash('Workflow reset to defaults.', 'success')
+
+        elif action == 'reorder':
+            raw = request.form.get('order_ids', '')
+            order_ids = [x.strip() for x in raw.split(',') if x.strip().isdigit()]
+            for i, sid in enumerate(order_ids):
+                ws = WorkflowStatus.query.get(int(sid))
+                if ws and ws.project_id == project.id:
+                    ws.order = i
+            db.session.commit()
+            flash('Order saved.', 'success')
+
+        return redirect(url_for('projects.project_workflow', key=key))
+
+    custom_statuses = WorkflowStatus.query.filter_by(
+        project_id=project.id
+    ).order_by(WorkflowStatus.order).all()
+    return render_template('projects/workflow.html',
+        project=project, custom_statuses=custom_statuses,
+        defaults=DEFAULT_WORKFLOW_STATUSES)
+
+
+@projects_bp.route('/projects/<key>/workflow/<int:status_id>/delete', methods=['POST'])
+@login_required
+@require_role('admin', 'manager')
+def delete_workflow_status(key, status_id):
+    project = Project.query.filter_by(key=key).first_or_404()
+    ws = WorkflowStatus.query.get_or_404(status_id)
+    if ws.project_id != project.id:
+        abort(403)
+
+    in_use = Ticket.query.filter_by(project_id=project.id, status=ws.value).count()
+    if in_use > 0:
+        flash(f'Cannot delete: {in_use} ticket(s) use this status. Re-assign them first.', 'error')
+        return redirect(url_for('projects.project_workflow', key=key))
+
+    db.session.delete(ws)
+    db.session.commit()
+    flash(f'Status "{ws.name}" deleted.', 'success')
+    return redirect(url_for('projects.project_workflow', key=key))
+
+
+@projects_bp.route('/projects/<key>/permissions', methods=['GET', 'POST'])
+@login_required
+@require_role('admin', 'manager')
+def project_permissions(key):
+    """Manage fine-grained per-role permissions for a project."""
+    project = Project.query.filter_by(key=key).first_or_404()
+
+    if request.method == 'POST':
+        import json as _json
+        for role in ('manager', 'developer', 'viewer'):
+            perms = {}
+            for perm in ALL_PERMISSIONS:
+                perms[perm] = bool(request.form.get(f'{role}_{perm}'))
+            pp = ProjectPermission.query.filter_by(
+                project_id=project.id, role=role
+            ).first()
+            if pp:
+                pp.permissions_json = _json.dumps(perms)
+            else:
+                pp = ProjectPermission(
+                    project_id=project.id, role=role,
+                    permissions_json=_json.dumps(perms),
+                )
+                db.session.add(pp)
+        log_audit('project.permissions_updated', 'project', project.id, project.key)
+        db.session.commit()
+        flash('Permissions saved.', 'success')
+        return redirect(url_for('projects.project_permissions', key=key))
+
+    import json as _json
+    role_perms = {}
+    for role in ('owner', 'manager', 'developer', 'viewer'):
+        pp = ProjectPermission.query.filter_by(
+            project_id=project.id, role=role
+        ).first()
+        if pp:
+            role_perms[role] = pp.get_permissions()
+        else:
+            role_perms[role] = dict(DEFAULT_PERMISSIONS.get(role, {}))
+
+    return render_template('projects/permissions.html',
+                           project=project, role_perms=role_perms,
+                           all_permissions=ALL_PERMISSIONS)
 
 
 @projects_bp.route('/api/projects/<key>/board/move', methods=['POST'])
@@ -283,7 +497,7 @@ def board_move_ticket(key):
     if ticket.project_id != project.id:
         return jsonify({'error': 'Ticket not in this project'}), 400
 
-    valid_statuses = [s.value for s in TicketStatus]
+    valid_statuses = project.get_status_values() + ['cancelled']
     if new_status not in valid_statuses:
         return jsonify({'error': 'Invalid status'}), 400
 

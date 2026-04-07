@@ -8,6 +8,25 @@
         <h1 class="text-xl font-bold">Settings</h1>
     </div>
 
+    <!-- Quick links -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {% for label, desc, url in [
+            ('Workflow', 'Custom statuses', url_for('projects.project_workflow', key=project.key)),
+            ('Custom Fields', 'Extra ticket fields', url_for('releases.project_custom_fields', key=project.key)),
+            ('Releases', 'Versions & fix versions', url_for('releases.project_releases', key=project.key)),
+            ('Components', 'Module / area tagging', url_for('releases.project_components', key=project.key)),
+            ('Permissions', 'Role-based access control', url_for('projects.project_permissions', key=project.key)),
+        ] %}
+        <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-4 flex items-center justify-between">
+            <div>
+                <h3 class="font-semibold text-sm">{{ label }}</h3>
+                <p class="text-xs dark:text-gray-400 text-gray-500 mt-0.5">{{ desc }}</p>
+            </div>
+            <a href="{{ url }}" class="px-3 py-1.5 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm">Manage</a>
+        </div>
+        {% endfor %}
+    </div>
+
     <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-6 space-y-6">
         <div>
             <h3 class="font-semibold text-amber mb-2">Archive Project</h3>
@@ -21,7 +40,7 @@
             </form>
         </div>
 
-        {% if current_user.role == 'admin' %}
+        {% if current_user.role in ('superadmin', 'admin') %}
         <div class="border-t dark:border-navy-border border-gray-200 pt-6">
             <h3 class="font-semibold text-rose mb-2">Delete Project</h3>
             <p class="text-sm dark:text-gray-400 text-gray-500 mb-3">This will permanently delete the project and all its data. This action cannot be undone.</p>

@@ -35,6 +35,18 @@
                 <input type="password" name="new_password"
                        class="w-full px-4 py-3 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 focus:outline-none focus:ring-2 focus:ring-electric text-sm">
             </div>
+            <div class="border-t dark:border-navy-border border-gray-200 pt-4">
+                <h3 class="text-sm font-semibold mb-3">Notification Preferences</h3>
+                <label class="flex items-center gap-3 cursor-pointer group">
+                    <input type="checkbox" name="email_notifications" value="1"
+                           {% if current_user.email_notifications %}checked{% endif %}
+                           class="w-4 h-4 rounded text-electric">
+                    <div>
+                        <p class="text-sm font-medium">Email Notifications</p>
+                        <p class="text-xs dark:text-gray-400 text-gray-500">Receive email alerts for assignments, mentions, status changes and deadline warnings.</p>
+                    </div>
+                </label>
+            </div>
             <button type="submit" class="px-6 py-3 bg-electric hover:bg-electric-dark text-white rounded-lg font-semibold transition-colors">
                 Save Changes
             </button>

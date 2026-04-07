@@ -3,7 +3,7 @@ from flask_login import login_required, current_user
 from app import db
 from app.models import Sprint, SprintStatus, Project, Ticket, TicketStatus
 from app.routes import require_role, log_activity
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 sprints_bp = Blueprint('sprints', __name__)
 
@@ -150,3 +150,105 @@ def remove_ticket_from_sprint(key, sprint_id):
         return jsonify({'success': True})
     flash('Ticket removed from sprint.', 'success')
     return redirect(url_for('sprints.sprint_detail', key=key, sprint_id=sprint_id))
+
+
+@sprints_bp.route('/api/projects/<key>/sprints/<int:sprint_id>/burndown')
+@login_required
+def sprint_burndown(key, sprint_id):
+    sprint = Sprint.query.get_or_404(sprint_id)
+    tickets = sprint.tickets.all()
+
+    if not sprint.start_date or not sprint.end_date:
+        return jsonify({'error': 'Sprint has no start/end dates set'}), 400
+
+    total_points = sum(t.story_points or 0 for t in tickets)
+    total_tickets = len(tickets)
+
+    start = sprint.start_date
+    if not start.tzinfo:
+        start = start.replace(tzinfo=timezone.utc)
+    end = sprint.end_date
+    if not end.tzinfo:
+        end = end.replace(tzinfo=timezone.utc)
+    today = datetime.now(timezone.utc)
+
+    total_days = max((end - start).days, 1)
+    labels, ideal_pts, actual_pts, ideal_cnt, actual_cnt = [], [], [], [], []
+
+    day_num = 0
+    current = start
+    while current <= end:
+        labels.append(current.strftime('%b %d'))
+
+        ideal_remaining_pts = round(total_points * (1 - day_num / total_days), 1)
+        ideal_pts.append(ideal_remaining_pts)
+        ideal_cnt.append(round(total_tickets * (1 - day_num / total_days), 1))
+
+        if current <= today:
+            day_end = current.replace(hour=23, minute=59, second=59)
+            completed_pts = sum(
+                t.story_points or 0 for t in tickets
+                if t.resolved_at and (
+                    t.resolved_at.replace(tzinfo=timezone.utc)
+                    if not t.resolved_at.tzinfo else t.resolved_at
+                ) <= day_end
+            )
+            completed_cnt = sum(
+                1 for t in tickets
+                if t.resolved_at and (
+                    t.resolved_at.replace(tzinfo=timezone.utc)
+                    if not t.resolved_at.tzinfo else t.resolved_at
+                ) <= day_end
+            )
+            actual_pts.append(max(total_points - completed_pts, 0))
+            actual_cnt.append(max(total_tickets - completed_cnt, 0))
+        else:
+            actual_pts.append(None)
+            actual_cnt.append(None)
+
+        current += timedelta(days=1)
+        day_num += 1
+
+    done_points = sum(t.story_points or 0 for t in tickets if t.status == TicketStatus.DONE.value)
+    done_tickets = sum(1 for t in tickets if t.status == TicketStatus.DONE.value)
+
+    return jsonify({
+        'labels': labels,
+        'ideal_points': ideal_pts,
+        'actual_points': actual_pts,
+        'ideal_count': ideal_cnt,
+        'actual_count': actual_cnt,
+        'total_points': total_points,
+        'done_points': done_points,
+        'total_tickets': total_tickets,
+        'done_tickets': done_tickets,
+    })
+
+
+@sprints_bp.route('/api/projects/<key>/velocity')
+@login_required
+def project_velocity(key):
+    project = Project.query.filter_by(key=key).first_or_404()
+    completed_sprints = Sprint.query.filter_by(
+        project_id=project.id, status=SprintStatus.COMPLETED.value
+    ).order_by(Sprint.end_date.asc()).all()
+
+    data = []
+    for sprint in completed_sprints:
+        tickets = sprint.tickets.all()
+        completed_pts = sum(
+            t.story_points or 0 for t in tickets
+            if t.status == TicketStatus.DONE.value
+        )
+        total_pts = sum(t.story_points or 0 for t in tickets)
+        completed_cnt = sum(1 for t in tickets if t.status == TicketStatus.DONE.value)
+        total_cnt = len(tickets)
+        data.append({
+            'name': sprint.name,
+            'completed_points': completed_pts,
+            'total_points': total_pts,
+            'completed_tickets': completed_cnt,
+            'total_tickets': total_cnt,
+        })
+
+    return jsonify(data)

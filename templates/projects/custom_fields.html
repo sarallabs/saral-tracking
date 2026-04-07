@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Custom Fields - {{ project.name }} - SaralTrack{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center gap-3">
+        <a href="{{ url_for('projects.project_overview', key=project.key) }}" class="dark:text-gray-400 text-gray-500 hover:text-electric">{{ project.key }}</a>
+        <span class="dark:text-gray-600 text-gray-300">/</span>
+        <h1 class="text-xl font-bold">Custom Fields</h1>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Existing fields -->
+        <div class="lg:col-span-2">
+            <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 overflow-hidden">
+                <div class="px-4 py-3 border-b dark:border-navy-border border-gray-200">
+                    <h2 class="font-semibold text-sm">Defined Fields</h2>
+                    <p class="text-xs dark:text-gray-400 text-gray-500 mt-0.5">These fields appear on every ticket in this project.</p>
+                </div>
+                {% if fields %}
+                <div class="divide-y dark:divide-navy-border divide-gray-200">
+                    {% for cf in fields %}
+                    <div class="flex items-center justify-between px-4 py-3 group">
+                        <div class="flex items-center gap-3">
+                            <div class="w-7 h-7 rounded-lg dark:bg-navy-lighter bg-gray-100 flex items-center justify-center text-xs font-bold dark:text-gray-400 text-gray-500">
+                                {% if cf.field_type == 'text' %}T{% elif cf.field_type == 'number' %}#{% elif cf.field_type == 'dropdown' %}▾{% elif cf.field_type == 'date' %}📅{% elif cf.field_type == 'url' %}🔗{% endif %}
+                            </div>
+                            <div>
+                                <p class="font-medium text-sm">{{ cf.name }}</p>
+                                <p class="text-xs dark:text-gray-500 text-gray-400">
+                                    {{ cf.field_type|capitalize }}
+                                    {% if cf.required %} · Required{% endif %}
+                                    {% if cf.field_type == 'dropdown' %}
+                                    · Options: {{ (cf.options_json | from_json)|join(', ') }}
+                                    {% endif %}
+                                </p>
+                            </div>
+                        </div>
+                        <form method="POST" action="{{ url_for('releases.delete_custom_field', key=project.key, field_id=cf.id) }}"
+                              class="opacity-0 group-hover:opacity-100">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="text-xs text-rose hover:underline"
+                                    onclick="return confirm('Delete custom field \'{{ cf.name }}\'? All values will be lost.')">Delete</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="p-10 text-center">
+                    <p class="dark:text-gray-500 text-gray-400 text-sm">No custom fields defined yet.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Add field form -->
+        <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5 h-fit sticky top-4" x-data="{ ftype: 'text' }">
+            <h2 class="font-semibold text-sm mb-4">Add Field</h2>
+            <form method="POST" class="space-y-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="add">
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Field Name *</label>
+                    <input type="text" name="name" required placeholder="e.g. Customer Name"
+                           class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-electric">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Field Type</label>
+                    <select name="field_type" x-model="ftype"
+                            class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm">
+                        <option value="text">Text</option>
+                        <option value="number">Number</option>
+                        <option value="dropdown">Dropdown</option>
+                        <option value="date">Date</option>
+                        <option value="url">URL</option>
+                    </select>
+                </div>
+                <div x-show="ftype === 'dropdown'" x-cloak>
+                    <label class="block text-xs font-medium dark:text-gray-400 text-gray-500 mb-1">Options (one per line)</label>
+                    <textarea name="options" rows="4" placeholder="Option 1&#10;Option 2&#10;Option 3"
+                              class="w-full px-3 py-2 rounded-lg dark:bg-navy bg-gray-50 border dark:border-navy-border border-gray-300 text-sm resize-none"></textarea>
+                </div>
+                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" name="required" class="rounded text-electric">
+                    Required field
+                </label>
+                <button type="submit" class="w-full px-4 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors">
+                    Add Field
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

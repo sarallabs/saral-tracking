@@ -4,7 +4,7 @@
 <div class="space-y-6">
     <div class="flex items-center justify-between">
         <h1 class="text-2xl font-bold">Projects</h1>
-        {% if current_user.role in ('admin', 'manager') %}
+        {% if current_user.can_manage %}
         <a href="{{ url_for('projects.create_project') }}" class="px-4 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             New Project
@@ -44,7 +44,7 @@
         <svg class="w-16 h-16 mx-auto dark:text-gray-600 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
         <h3 class="text-lg font-semibold mb-1">No projects yet</h3>
         <p class="dark:text-gray-400 text-gray-500 text-sm mb-4">Create your first project to start tracking work.</p>
-        {% if current_user.role in ('admin', 'manager') %}
+        {% if current_user.can_manage %}
         <a href="{{ url_for('projects.create_project') }}" class="px-4 py-2 bg-electric hover:bg-electric-dark text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Create Project

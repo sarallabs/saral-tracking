@@ -6,6 +6,7 @@ import enum
 
 
 class UserRole(str, enum.Enum):
+    SUPERADMIN = 'superadmin'
     ADMIN = 'admin'
     MANAGER = 'manager'
     DEVELOPER = 'developer'
@@ -59,6 +60,25 @@ class NotificationType(str, enum.Enum):
     DEADLINE_BREACH = 'deadline_breach'
     STATUS_CHANGE = 'status_change'
     COMMENT = 'comment'
+    LINK = 'link'
+
+
+class LinkType(str, enum.Enum):
+    BLOCKS = 'blocks'
+    IS_BLOCKED_BY = 'is_blocked_by'
+    DUPLICATES = 'duplicates'
+    RELATES_TO = 'relates_to'
+
+
+DEFAULT_WORKFLOW_STATUSES = [
+    {'name': 'Backlog',     'value': 'backlog',     'color': '#6B7280', 'order': 0, 'is_done': False, 'is_cancelled': False},
+    {'name': 'To Do',       'value': 'todo',        'color': '#3B82F6', 'order': 1, 'is_done': False, 'is_cancelled': False},
+    {'name': 'In Progress', 'value': 'in_progress', 'color': '#F59E0B', 'order': 2, 'is_done': False, 'is_cancelled': False},
+    {'name': 'In Review',   'value': 'in_review',   'color': '#8B5CF6', 'order': 3, 'is_done': False, 'is_cancelled': False},
+    {'name': 'Testing',     'value': 'testing',     'color': '#EC4899', 'order': 4, 'is_done': False, 'is_cancelled': False},
+    {'name': 'Done',        'value': 'done',        'color': '#10B981', 'order': 5, 'is_done': True,  'is_cancelled': False},
+    {'name': 'Cancelled',   'value': 'cancelled',   'color': '#EF4444', 'order': 6, 'is_done': False, 'is_cancelled': True},
+]
 
 
 project_members = db.Table('project_members',
@@ -90,6 +110,8 @@ class User(UserMixin, db.Model):
     avatar_url = db.Column(db.String(500), default='')
     role = db.Column(db.String(20), nullable=False, default=UserRole.DEVELOPER.value)
     is_active = db.Column(db.Boolean, default=True)
+    email_notifications = db.Column(db.Boolean, default=True)
+    must_change_password = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_login = db.Column(db.DateTime)
 
@@ -118,8 +140,23 @@ class User(UserMixin, db.Model):
     def has_role(self, *roles):
         return self.role in [r.value if isinstance(r, UserRole) else r for r in roles]
 
+    @property
+    def is_superadmin(self):
+        return self.role == UserRole.SUPERADMIN.value
+
+    @property
+    def can_manage(self):
+        """True for superadmin, admin, and manager — can create/edit projects, sprints, etc."""
+        return self.role in (UserRole.SUPERADMIN.value, UserRole.ADMIN.value, UserRole.MANAGER.value)
+
+    @property
+    def can_develop(self):
+        """True for superadmin, admin, manager, and developer — can create tickets, log work."""
+        return self.role in (UserRole.SUPERADMIN.value, UserRole.ADMIN.value,
+                             UserRole.MANAGER.value, UserRole.DEVELOPER.value)
+
     def can_edit_ticket(self, ticket):
-        if self.role in (UserRole.ADMIN.value, UserRole.MANAGER.value):
+        if self.role in (UserRole.SUPERADMIN.value, UserRole.ADMIN.value, UserRole.MANAGER.value):
             return True
         if self.role == UserRole.DEVELOPER.value:
             return ticket.assigned_to == self.id or ticket.created_by == self.id
@@ -154,6 +191,18 @@ class Project(db.Model):
         self.ticket_counter = (self.ticket_counter or 0) + 1
         return f"{self.key}-{self.ticket_counter}"
 
+    def get_workflow_statuses(self):
+        """Return custom workflow statuses if configured, else None (use defaults)."""
+        custom = WorkflowStatus.query.filter_by(project_id=self.id).order_by(WorkflowStatus.order).all()
+        return custom if custom else None
+
+    def get_status_values(self):
+        """Return list of status value strings for this project."""
+        custom = self.get_workflow_statuses()
+        if custom:
+            return [s.value for s in custom]
+        return [s.value for s in TicketStatus if s != TicketStatus.CANCELLED]
+
     def __repr__(self):
         return f'<Project {self.key}>'
 
@@ -175,6 +224,8 @@ class Ticket(db.Model):
     assigned_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
+    fix_version_id = db.Column(db.Integer, db.ForeignKey('version.id'), nullable=True)
+    component_id = db.Column(db.Integer, db.ForeignKey('component.id'), nullable=True)
     soft_deadline = db.Column(db.DateTime, nullable=True)
     hard_deadline = db.Column(db.DateTime, nullable=True)
     estimated_hours = db.Column(db.Float, default=0)
@@ -198,6 +249,10 @@ class Ticket(db.Model):
                                      order_by='ActivityLog.created_at.desc()')
 
     assigner = db.relationship('User', foreign_keys=[assigned_by])
+    fix_version = db.relationship('Version', foreign_keys=[fix_version_id],
+                                   backref=db.backref('tickets', lazy='dynamic'))
+    component = db.relationship('Component', foreign_keys=[component_id],
+                                 backref=db.backref('tickets', lazy='dynamic'))
 
     def deadline_urgency(self):
         """Return urgency level: green, yellow, orange, red, or None."""
@@ -329,3 +384,252 @@ class Notification(db.Model):
 
     def __repr__(self):
         return f'<Notification {self.type} for {self.user_id}>'
+
+
+class TicketLink(db.Model):
+    """Directed link between two tickets (blocks, duplicates, relates_to)."""
+    id = db.Column(db.Integer, primary_key=True)
+    source_ticket_id = db.Column(db.Integer, db.ForeignKey('ticket.id'), nullable=False)
+    target_ticket_id = db.Column(db.Integer, db.ForeignKey('ticket.id'), nullable=False)
+    link_type = db.Column(db.String(30), nullable=False, default=LinkType.RELATES_TO.value)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    source_ticket = db.relationship('Ticket', foreign_keys=[source_ticket_id],
+                                     backref=db.backref('outgoing_links', lazy='dynamic',
+                                                        cascade='all, delete-orphan'))
+    target_ticket = db.relationship('Ticket', foreign_keys=[target_ticket_id],
+                                     backref=db.backref('incoming_links', lazy='dynamic',
+                                                        cascade='all, delete-orphan'))
+    creator = db.relationship('User', foreign_keys=[created_by])
+
+    def inverse_label(self):
+        """Human-readable label from the target ticket's perspective."""
+        return {
+            LinkType.BLOCKS.value: 'is blocked by',
+            LinkType.IS_BLOCKED_BY.value: 'blocks',
+            LinkType.DUPLICATES.value: 'is duplicated by',
+            LinkType.RELATES_TO.value: 'relates to',
+        }.get(self.link_type, self.link_type)
+
+    def __repr__(self):
+        return f'<TicketLink {self.source_ticket_id} {self.link_type} {self.target_ticket_id}>'
+
+
+class WorkflowStatus(db.Model):
+    """Project-specific workflow status configuration."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    value = db.Column(db.String(50), nullable=False)
+    color = db.Column(db.String(7), default='#6B7280')
+    order = db.Column(db.Integer, default=0)
+    is_done = db.Column(db.Boolean, default=False)
+    is_cancelled = db.Column(db.Boolean, default=False)
+
+    project = db.relationship('Project',
+                               backref=db.backref('workflow_statuses', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<WorkflowStatus {self.value} ({self.project_id})>'
+
+
+class SavedFilter(db.Model):
+    """User-saved search/filter preset for a project's backlog."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+    name = db.Column(db.String(100), nullable=False)
+    filter_json = db.Column(db.Text, nullable=False, default='{}')
+    is_shared = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    owner = db.relationship('User', foreign_keys=[user_id])
+    project = db.relationship('Project', foreign_keys=[project_id],
+                               backref=db.backref('saved_filters', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<SavedFilter {self.name}>'
+
+
+class CustomField(db.Model):
+    """Project-defined extra field that can be attached to tickets."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    field_type = db.Column(db.String(20), nullable=False, default='text')
+    options_json = db.Column(db.Text, default='[]')
+    required = db.Column(db.Boolean, default=False)
+    order = db.Column(db.Integer, default=0)
+
+    project = db.relationship('Project',
+                               backref=db.backref('custom_fields', lazy='dynamic',
+                                                  order_by='CustomField.order'))
+    values = db.relationship('TicketCustomFieldValue', backref='field', lazy='dynamic',
+                              cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<CustomField {self.name}>'
+
+
+class TicketCustomFieldValue(db.Model):
+    """Value for a custom field on a specific ticket."""
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey('ticket.id'), nullable=False)
+    custom_field_id = db.Column(db.Integer, db.ForeignKey('custom_field.id'), nullable=False)
+    value_text = db.Column(db.Text, default='')
+
+    ticket = db.relationship('Ticket',
+                              backref=db.backref('custom_field_values', lazy='dynamic',
+                                                 cascade='all, delete-orphan'))
+
+    def __repr__(self):
+        return f'<TicketCustomFieldValue field={self.custom_field_id} ticket={self.ticket_id}>'
+
+
+class CommentReaction(db.Model):
+    """Emoji reaction on a comment."""
+    id = db.Column(db.Integer, primary_key=True)
+    comment_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    emoji = db.Column(db.String(10), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    comment = db.relationship('Comment',
+                               backref=db.backref('reactions', lazy='dynamic',
+                                                  cascade='all, delete-orphan'))
+    user = db.relationship('User', foreign_keys=[user_id])
+
+    __table_args__ = (
+        db.UniqueConstraint('comment_id', 'user_id', 'emoji', name='uq_reaction'),
+    )
+
+    def __repr__(self):
+        return f'<CommentReaction {self.emoji} on {self.comment_id}>'
+
+
+class VersionStatus(str, enum.Enum):
+    UNRELEASED = 'unreleased'
+    RELEASED = 'released'
+    ARCHIVED = 'archived'
+
+
+class Version(db.Model):
+    """Project release / version (like Jira Fix Version)."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, default='')
+    release_date = db.Column(db.DateTime, nullable=True)
+    status = db.Column(db.String(20), default=VersionStatus.UNRELEASED.value)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    project = db.relationship('Project',
+                               backref=db.backref('versions', lazy='dynamic'))
+    creator = db.relationship('User', foreign_keys=[created_by])
+
+    def __repr__(self):
+        return f'<Version {self.name}>'
+
+
+class Component(db.Model):
+    """Project component / module for grouping tickets (like Jira Components)."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text, default='')
+    lead_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    color = db.Column(db.String(7), default='#6B7280')
+
+    project = db.relationship('Project', backref=db.backref('components', lazy='dynamic'))
+    lead = db.relationship('User', foreign_keys=[lead_user_id])
+
+    def __repr__(self):
+        return f'<Component {self.name}>'
+
+
+# Permissions available per project role
+ALL_PERMISSIONS = [
+    'create_ticket', 'edit_any_ticket', 'delete_ticket',
+    'manage_sprint', 'manage_members', 'manage_workflow',
+    'manage_labels', 'view_internal_comments',
+]
+
+DEFAULT_PERMISSIONS = {
+    'owner': {p: True for p in ALL_PERMISSIONS},
+    'manager': {p: True for p in ALL_PERMISSIONS},
+    'developer': {
+        'create_ticket': True, 'edit_any_ticket': False, 'delete_ticket': False,
+        'manage_sprint': False, 'manage_members': False, 'manage_workflow': False,
+        'manage_labels': True, 'view_internal_comments': True,
+    },
+    'viewer': {p: False for p in ALL_PERMISSIONS},
+}
+
+
+class ProjectPermission(db.Model):
+    """Fine-grained per-project role permission overrides."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    role = db.Column(db.String(30), nullable=False)
+    permissions_json = db.Column(db.Text, default='{}')
+
+    project = db.relationship('Project', backref=db.backref('permissions', lazy='dynamic'))
+
+    __table_args__ = (
+        db.UniqueConstraint('project_id', 'role', name='uq_project_role_perm'),
+    )
+
+    def get_permissions(self):
+        import json as _j
+        try:
+            return _j.loads(self.permissions_json or '{}')
+        except Exception:
+            return {}
+
+    def __repr__(self):
+        return f'<ProjectPermission {self.project_id}/{self.role}>'
+
+
+class APIKey(db.Model):
+    """User API key for REST API authentication."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    key_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    prefix = db.Column(db.String(8), nullable=False)
+    scopes = db.Column(db.String(200), default='read')
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+    owner = db.relationship('User', foreign_keys=[user_id],
+                             backref=db.backref('api_keys', lazy='dynamic'))
+
+    def has_scope(self, scope):
+        return scope in self.scopes.split(',')
+
+    def __repr__(self):
+        return f'<APIKey {self.prefix}...>'
+
+
+class AuditLog(db.Model):
+    """System-wide audit log for admin visibility of all user actions."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    username = db.Column(db.String(80), default='')
+    action = db.Column(db.String(100), nullable=False, index=True)
+    entity_type = db.Column(db.String(50), default='')
+    entity_id = db.Column(db.Integer, nullable=True)
+    entity_name = db.Column(db.String(200), default='')
+    ip_address = db.Column(db.String(45), default='')
+    user_agent = db.Column(db.String(500), default='')
+    old_values = db.Column(db.Text, default='')
+    new_values = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+
+    def __repr__(self):
+        return f'<AuditLog {self.action} by {self.username}>'

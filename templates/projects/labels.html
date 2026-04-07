@@ -8,7 +8,7 @@
         <h1 class="text-xl font-bold">Labels</h1>
     </div>
 
-    {% if current_user.role in ('admin', 'manager') %}
+    {% if current_user.can_manage %}
     <div class="dark:bg-navy-light bg-white rounded-xl border dark:border-navy-border border-gray-200 p-5">
         <form method="POST" class="flex items-end gap-3">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -35,7 +35,7 @@
                     <span class="w-4 h-4 rounded-full" style="background: {{ label.color }}"></span>
                     <span class="text-sm font-medium">{{ label.name }}</span>
                 </div>
-                {% if current_user.role in ('admin', 'manager') %}
+                {% if current_user.can_manage %}
                 <form method="POST" action="{{ url_for('projects.delete_label', key=project.key, label_id=label.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button class="text-xs text-rose hover:underline">Delete</button>
