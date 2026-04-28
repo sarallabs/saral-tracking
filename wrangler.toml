@@ -1,0 +1,10 @@
+name = "saralops"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
+
+[vars]
+NEXT_PUBLIC_APP_NAME = "SaralOps"
+
+# Bind Cloudflare secrets via Cloudflare dashboard (do not add secrets here)
+# AUTH_SECRET, AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET, DATABASE_URL, etc.

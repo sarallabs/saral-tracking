@@ -1,0 +1,151 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: 222 47% 6%;
+    --foreground: 213 31% 91%;
+    --card: 222 47% 8%;
+    --card-foreground: 213 31% 91%;
+    --popover: 222 47% 8%;
+    --popover-foreground: 213 31% 91%;
+    --primary: 252 87% 67%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 47% 12%;
+    --secondary-foreground: 213 31% 91%;
+    --muted: 222 47% 12%;
+    --muted-foreground: 215 20% 55%;
+    --accent: 252 87% 67%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 47% 15%;
+    --input: 222 47% 12%;
+    --ring: 252 87% 67%;
+    --radius: 0.5rem;
+
+    /* Sidebar */
+    --sidebar-bg: 222 47% 5%;
+    --sidebar-border: 222 47% 10%;
+    --sidebar-hover: 222 47% 10%;
+    --sidebar-active: 252 87% 67%;
+
+    /* Status colors */
+    --status-todo: 215 20% 55%;
+    --status-in-progress: 214 89% 52%;
+    --status-in-review: 38 92% 50%;
+    --status-done: 142 76% 45%;
+    --status-cancelled: 0 72% 51%;
+
+    /* Priority colors */
+    --priority-urgent: 0 72% 51%;
+    --priority-high: 25 95% 53%;
+    --priority-medium: 214 89% 52%;
+    --priority-low: 215 20% 55%;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+    box-sizing: border-box;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .glow {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.15);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm font-medium
+      text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]
+      hover:bg-[hsl(var(--sidebar-hover))] transition-colors duration-150 cursor-pointer;
+  }
+
+  .sidebar-item-active {
+    @apply bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))];
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg
+      bg-[hsl(var(--primary))] text-white text-sm font-medium
+      hover:bg-[hsl(var(--primary))]/90 active:scale-[0.98]
+      transition-all duration-150 cursor-pointer;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg
+      bg-[hsl(var(--secondary))] text-[hsl(var(--foreground))] text-sm font-medium
+      hover:bg-[hsl(var(--secondary))]/80 active:scale-[0.98]
+      transition-all duration-150 cursor-pointer border border-[hsl(var(--border))];
+  }
+
+  .card {
+    @apply bg-[hsl(var(--card))] border border-[hsl(var(--border))] rounded-xl p-4;
+  }
+
+  .input-field {
+    @apply w-full px-3 py-2 rounded-lg bg-[hsl(var(--input))] border border-[hsl(var(--border))]
+      text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))]
+      focus:outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]/50 focus:border-[hsl(var(--primary))]/50
+      transition-colors;
+  }
+
+  /* Animate in */
+  .animate-in {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate-slide-in {
+    animation: slideIn 0.25s ease-out;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+}
