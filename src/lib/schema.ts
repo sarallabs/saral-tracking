@@ -64,6 +64,23 @@ export const entityTypeEnum = pgEnum("entity_type", [
   "channel",
 ]);
 
+export const spaceRoleEnum = pgEnum("space_role", [
+  "admin",
+  "editor",
+  "viewer",
+]);
+
+export const pageStatusEnum = pgEnum("page_status", [
+  "draft",
+  "published",
+]);
+
+export const pageAccessEnum = pgEnum("page_access", [
+  "workspace",
+  "space",
+  "restricted",
+]);
+
 // ─── Workspaces ──────────────────────────────────────────────────────────────
 
 export const workspaces = pgTable("workspaces", {
@@ -74,6 +91,50 @@ export const workspaces = pgTable("workspaces", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// ─── Spaces ───────────────────────────────────────────────────────────────────
+
+export const spaces = pgTable(
+  "spaces",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description"),
+    icon: text("icon").default("📁"),
+    color: text("color").default("#6366f1"),
+    isPrivate: boolean("is_private").notNull().default(false),
+    categories: text("categories").default("[]"), // JSON array of category strings
+    tags: text("tags").default("[]"), // JSON array of tag strings
+    homepageId: uuid("homepage_id"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("space_workspace_idx").on(t.workspaceId)]
+);
+
+export const spaceMembers = pgTable(
+  "space_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceId: uuid("space_id")
+      .notNull()
+      .references(() => spaces.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: spaceRoleEnum("role").notNull().default("viewer"),
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("space_member_idx").on(t.spaceId, t.userId),
+    uniqueIndex("space_member_unique").on(t.spaceId, t.userId),
+  ]
+);
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 
@@ -235,22 +296,75 @@ export const pages = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "cascade" }),
+    spaceId: uuid("space_id").references(() => spaces.id, { onDelete: "set null" }),
     projectId: uuid("project_id").references(() => projects.id, {
       onDelete: "set null",
     }),
     title: text("title").notNull().default("Untitled"),
     content: text("content").default(""),
+    draftContent: text("draft_content"),
     authorId: uuid("author_id").references(() => users.id, {
       onDelete: "set null",
     }),
     parentId: uuid("parent_id"),
     slug: text("slug"),
     isPublished: boolean("is_published").notNull().default(false),
+    status: pageStatusEnum("status").notNull().default("draft"),
+    accessLevel: pageAccessEnum("access_level").notNull().default("workspace"),
+    depth: integer("depth").notNull().default(0), // 0=root, 1=sub, 2=sub-sub (max)
+    isBlogPost: boolean("is_blog_post").notNull().default(false),
     emoji: text("emoji").default("📄"),
+    coverImage: text("cover_image"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
-  (t) => [index("page_workspace_idx").on(t.workspaceId)]
+  (t) => [
+    index("page_workspace_idx").on(t.workspaceId),
+    index("page_space_idx").on(t.spaceId),
+  ]
+);
+
+// ─── Page Access Grants (for restricted pages) ────────────────────────────────
+
+export const pageAccessGrants = pgTable(
+  "page_access_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pageId: uuid("page_id")
+      .notNull()
+      .references(() => pages.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    canEdit: boolean("can_edit").notNull().default(false),
+    grantedAt: timestamp("granted_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("page_grant_idx").on(t.pageId, t.userId),
+    uniqueIndex("page_grant_unique").on(t.pageId, t.userId),
+  ]
+);
+
+// ─── Page Comments ────────────────────────────────────────────────────────────
+
+export const pageComments = pgTable(
+  "page_comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pageId: uuid("page_id")
+      .notNull()
+      .references(() => pages.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+    content: text("content").notNull(),
+    parentId: uuid("parent_id"), // for thread replies
+    // Inline anchor
+    anchorText: text("anchor_text"), // selected text this comment refers to
+    anchorId: text("anchor_id"),    // optional unique id stamped on the selection
+    isResolved: boolean("is_resolved").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("page_comment_page_idx").on(t.pageId)]
 );
 
 export const pageVersions = pgTable("page_versions", {
@@ -422,6 +536,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   memberships: many(memberships),
   projectMembers: many(projectMembers),
+  spaceMembers: many(spaceMembers),
   notifications: many(notifications),
 }));
 
@@ -430,6 +545,24 @@ export const workspacesRelations = relations(workspaces, ({ many }) => ({
   projects: many(projects),
   pages: many(pages),
   channels: many(channels),
+  spaces: many(spaces),
+}));
+
+export const spacesRelations = relations(spaces, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [spaces.workspaceId], references: [workspaces.id] }),
+  createdBy: one(users, { fields: [spaces.createdBy], references: [users.id] }),
+  members: many(spaceMembers),
+  pages: many(pages),
+}));
+
+export const spaceMembersRelations = relations(spaceMembers, ({ one }) => ({
+  space: one(spaces, { fields: [spaceMembers.spaceId], references: [spaces.id] }),
+  user: one(users, { fields: [spaceMembers.userId], references: [users.id] }),
+}));
+
+export const pageCommentsRelations = relations(pageComments, ({ one }) => ({
+  page: one(pages, { fields: [pageComments.pageId], references: [pages.id] }),
+  author: one(users, { fields: [pageComments.authorId], references: [users.id] }),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({

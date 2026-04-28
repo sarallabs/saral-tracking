@@ -17,6 +17,7 @@ import {
   Shield,
   Users,
   Activity,
+  Layers,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -52,6 +53,12 @@ const docsSection = {
     { label: "My Pages", href: "/docs/mine" },
     { label: "Starred", href: "/docs/starred" },
   ],
+};
+
+const spacesSection = {
+  label: "Spaces",
+  icon: Layers,
+  href: "/spaces",
 };
 
 // Channels goes to /channels which loads ChannelSidebar with real UUIDs
@@ -164,6 +171,11 @@ export function Sidebar({ user }: SidebarProps) {
           <p className="px-3 text-[10px] font-semibold text-[hsl(var(--muted-foreground))]/60 uppercase tracking-wider mb-1">
             Work
           </p>
+          <NavSection
+            label={spacesSection.label}
+            icon={spacesSection.icon}
+            href={spacesSection.href}
+          />
           <NavSection
             label={projectsSection.label}
             icon={projectsSection.icon}

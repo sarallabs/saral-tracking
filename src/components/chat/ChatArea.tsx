@@ -33,13 +33,16 @@ export function ChatArea({ channel, currentUserId }: ChatAreaProps) {
     fetchMessages();
   }, [channel.id]);
 
+let sharedAblyClient: Ably.Realtime | null = null;
+
   useEffect(() => {
-    let client: Ably.Realtime | null = null;
     let ablyChannel: any = null;
 
     async function initAbly() {
-      client = new Ably.Realtime({ authUrl: "/api/ably/auth" });
-      ablyChannel = client.channels.get(`channel:${channel.id}`);
+      if (!sharedAblyClient) {
+        sharedAblyClient = new Ably.Realtime({ authUrl: "/api/ably/auth" });
+      }
+      ablyChannel = sharedAblyClient.channels.get(`channel:${channel.id}`);
       
       ablyChannel.subscribe("message", (message: any) => {
         setMessages(prev => {
@@ -73,8 +76,14 @@ export function ChatArea({ channel, currentUserId }: ChatAreaProps) {
     initAbly();
 
     return () => {
-      ablyChannel?.unsubscribe();
-      client?.close();
+      try {
+        if (ablyChannel) {
+          ablyChannel.unsubscribe();
+          ablyChannel.detach(() => {});
+        }
+      } catch (error) {
+        // Ignore synchronous cleanup errors
+      }
     };
   }, [channel.id]);
 

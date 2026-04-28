@@ -73,16 +73,68 @@ export const ALL_STATUSES: IssueStatus[] = ["backlog", "todo", "in_progress", "i
 export interface Page {
   id: string;
   workspaceId: string;
+  spaceId: string | null;
   projectId: string | null;
   title: string;
   content: string | null;
+  draftContent: string | null;
   authorId: string | null;
   parentId: string | null;
   slug: string | null;
   isPublished: boolean;
+  status: "draft" | "published";
+  accessLevel: "workspace" | "space" | "restricted";
+  depth: number;
+  isBlogPost: boolean;
   emoji: string | null;
+  coverImage: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Space {
+  id: string;
+  workspaceId: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  icon: string | null;
+  color: string | null;
+  isPrivate: boolean;
+  categories: string[];
+  tags: string[];
+  homepageId: string | null;
+  createdBy: string | null;
+  memberCount?: number;
+  userRole?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SpaceMember {
+  id: string;
+  userId: string;
+  role: "admin" | "editor" | "viewer";
+  joinedAt: string;
+  name: string | null;
+  email: string | null;
+  image: string | null;
+}
+
+export interface PageComment {
+  id: string;
+  pageId: string;
+  content: string;
+  parentId: string | null;
+  anchorText: string | null;
+  anchorId: string | null;
+  isResolved: boolean;
+  createdAt: string;
+  updatedAt: string;
+  authorId: string | null;
+  authorName: string | null;
+  authorEmail: string | null;
+  authorImage: string | null;
 }
 
 export interface PageVersion {
